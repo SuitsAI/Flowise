@@ -85,7 +85,7 @@ class Custom_MCP implements INode {
             }
         }
 
-        return tools.filter((tool: any) => mcpActions.includes(tool.name))
+        return tools.filter((tool: any) => mcpActions.length ==0 || mcpActions.includes(tool.name))
     }
 
     async getTools(nodeData: INodeData): Promise<Tool[]> {
