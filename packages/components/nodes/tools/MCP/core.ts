@@ -6,6 +6,42 @@ import { z } from 'zod'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 
+async function initializeClient(serverParams: StdioServerParameters | any, transportType: 'stdio' | 'sse'): Promise<Client> {
+    const client = new Client(
+        {
+            name: 'flowise-client',
+            version: '1.0.0'
+        },
+        {
+            capabilities: {}
+        }
+    )
+    if (transportType === 'stdio') {
+        // Compatible with overridden PATH configuration
+        serverParams.env = {
+            ...(serverParams.env || {}),
+            PATH: process.env.PATH
+        }
+
+        const transport = new StdioClientTransport(serverParams as StdioServerParameters)
+        await client.connect(transport)
+    } else {
+        if (serverParams.url === undefined) {
+            throw new Error('URL is required for SSE transport')
+        }
+
+        const baseUrl = new URL(serverParams.url)
+        try {
+            const transport = new StreamableHTTPClientTransport(baseUrl)
+            await client.connect(transport)
+        } catch (error) {
+            const transport = new SSEClientTransport(baseUrl)
+            await client.connect(transport)
+        }
+    }
+    return client
+}
+
 export class MCPToolkit extends BaseToolkit {
     tools: Tool[] = []
     _tools: ListToolsResult | null = null
@@ -21,42 +57,13 @@ export class MCPToolkit extends BaseToolkit {
     }
     async initialize() {
         if (this._tools === null) {
-            this.client = new Client(
-                {
-                    name: 'flowise-client',
-                    version: '1.0.0'
-                },
-                {
-                    capabilities: {}
-                }
-            )
-            if (this.transportType === 'stdio') {
-                // Compatible with overridden PATH configuration
-                this.serverParams.env = {
-                    ...(this.serverParams.env || {}),
-                    PATH: process.env.PATH
-                }
-
-                this.transport = new StdioClientTransport(this.serverParams as StdioServerParameters)
-                await this.client.connect(this.transport)
-            } else {
-                if (this.serverParams.url === undefined) {
-                    throw new Error('URL is required for SSE transport')
-                }
-
-                const baseUrl = new URL(this.serverParams.url)
-                try {
-                    this.transport = new StreamableHTTPClientTransport(baseUrl)
-                    await this.client.connect(this.transport)
-                } catch (error) {
-                    this.transport = new SSEClientTransport(baseUrl)
-                    await this.client.connect(this.transport)
-                }
-            }
+            this.client = await initializeClient(this.serverParams, this.transportType)
 
             this._tools = await this.client.request({ method: 'tools/list' }, ListToolsResultSchema)
 
             this.tools = await this.get_tools()
+
+            await this.client.close()
         }
     }
 
@@ -69,10 +76,11 @@ export class MCPToolkit extends BaseToolkit {
                 throw new Error('Client is not initialized')
             }
             return await MCPTool({
-                client: this.client,
                 name: tool.name,
                 description: tool.description || '',
-                argsSchema: createSchemaModel(tool.inputSchema)
+                argsSchema: createSchemaModel(tool.inputSchema),
+                serverParams: this.serverParams,
+                transportType: this.transportType
             })
         })
         return Promise.all(toolsPromises)
@@ -80,20 +88,24 @@ export class MCPToolkit extends BaseToolkit {
 }
 
 export async function MCPTool({
-    client,
     name,
     description,
-    argsSchema
+    argsSchema,
+    serverParams,
+    transportType
 }: {
-    client: Client
     name: string
     description: string
     argsSchema: any
+    serverParams: StdioServerParameters | any
+    transportType: 'stdio' | 'sse'
 }): Promise<Tool> {
     return tool(
         async (input): Promise<string> => {
             const req: CallToolRequest = { method: 'tools/call', params: { name: name, arguments: input } }
+            const client = await initializeClient(serverParams, transportType)
             const res = await client.request(req, CallToolResultSchema)
+            await client.close()
             const content = res.content
             const contentString = JSON.stringify(content)
             return contentString
