@@ -128,10 +128,54 @@ function createSchemaModel(
         throw new Error('Invalid schema type or missing properties')
     }
 
-    const schemaProperties = Object.entries(inputSchema.properties).reduce((acc, [key, _]) => {
-        acc[key] = z.any()
-        return acc
-    }, {} as Record<string, import('zod').ZodTypeAny>)
+    // 
+    return jsonSchemaToZod(inputSchema)
+}
 
-    return z.object(schemaProperties)
+function jsonSchemaToZod(schema: any): z.ZodType<any> {
+  if (!schema) {
+    return z.any();
+  }
+
+  switch (schema.type) {
+    case 'string':
+      if (schema.enum) {
+        return z.enum(schema.enum as [string, ...string[]]);
+      }
+      return z.string();
+    
+    case 'number':
+      return z.number();
+    
+    case 'boolean':
+      return z.boolean();
+    
+    case 'object':
+      if (schema.properties) {
+        const shape: Record<string, z.ZodType<any>> = {};
+        
+        // Process each property
+        for (const [key, propSchema] of Object.entries(schema.properties)) {
+          const isRequired = schema.required?.includes(key);
+          const zodType = jsonSchemaToZod(propSchema);
+          shape[key] = isRequired ? zodType : zodType.optional();
+        }
+
+        // Create the object schema
+        const objSchema = z.object(shape);
+
+        // Handle additionalProperties
+        return schema.additionalProperties === false ? objSchema.strict() : objSchema;
+      }
+      return z.record(z.any());
+    
+    case 'array':
+      if (schema.items) {
+        return z.array(jsonSchemaToZod(schema.items));
+      }
+      return z.array(z.any());
+    
+    default:
+      return z.any();
+  }
 }
