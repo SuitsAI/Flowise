@@ -19,6 +19,7 @@ class Custom_MCP implements INode {
     documentation: string
     credential: INodeParams
     inputs: INodeParams[]
+    toolkit: MCPToolkit | null = null
 
     constructor() {
         this.label = 'Custom MCP'
@@ -73,7 +74,26 @@ class Custom_MCP implements INode {
     }
 
     async init(nodeData: INodeData): Promise<any> {
-        const tools = await this.getTools(nodeData)
+        // Clean up previous toolkit instance if it exists
+        if (this.toolkit) {
+            if (this.toolkit.client) {
+                try {
+                    // Close the client connection if possible
+                    if (typeof this.toolkit.client.close === 'function') {
+                        await this.toolkit.client.close()
+                    }
+                } catch (error) {
+                    console.error('Error closing MCP client:', error)
+                }
+            }
+            // Clear the toolkit properties
+            this.toolkit = null
+        }
+
+        const toolkit = await this.createToolkit(nodeData)
+        this.toolkit = toolkit
+
+        const tools = await toolkit.getTools()
 
         const _mcpActions = nodeData.inputs?.mcpActions
         let mcpActions = []
@@ -85,10 +105,29 @@ class Custom_MCP implements INode {
             }
         }
 
-        return tools.filter((tool: any) => mcpActions.includes(tool.name))
+        return tools.filter((tool: any) => mcpActions.length == 0 || mcpActions.includes(tool.name))
     }
 
     async getTools(nodeData: INodeData): Promise<Tool[]> {
+        const toolkit = await this.createToolkit(nodeData)
+        // Don't store this toolkit since it's just for listing actions
+        const tools = toolkit.tools ?? []
+        
+        // Clean up the temporary toolkit after use
+        if (toolkit.client) {
+            try {
+                if (typeof toolkit.client.close === 'function') {
+                    await toolkit.client.close()
+                }
+            } catch (error) {
+                console.error('Error closing temporary MCP client:', error)
+            }
+        }
+        
+        return tools as Tool[]
+    }
+
+    async createToolkit(nodeData: INodeData): Promise<MCPToolkit> {
         const mcpServerConfig = nodeData.inputs?.mcpServerConfig as string
 
         if (!mcpServerConfig) {
@@ -113,12 +152,26 @@ class Custom_MCP implements INode {
             }
 
             await toolkit.initialize()
-
-            const tools = toolkit.tools ?? []
-
-            return tools as Tool[]
+            return toolkit
         } catch (error) {
             throw new Error(`Invalid MCP Server Config: ${error}`)
+        }
+    }
+
+    async cleanup(): Promise<void> {
+        // Clean up toolkit when this node is no longer needed
+        if (this.toolkit) {
+            if (this.toolkit.client) {
+                try {
+                    // Close the client connection if possible
+                    if (typeof this.toolkit.client.close === 'function') {
+                        await this.toolkit.client.close()
+                    }
+                } catch (error) {
+                    console.error('Error closing MCP client during cleanup:', error)
+                }
+            }
+            this.toolkit = null
         }
     }
 }
