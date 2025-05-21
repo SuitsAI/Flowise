@@ -135,16 +135,61 @@ function createSchemaModel(
     inputSchema: {
         type: 'object'
         properties?: import('zod').objectOutputType<{}, import('zod').ZodTypeAny, 'passthrough'> | undefined
+        required?: string[]
     } & { [k: string]: unknown }
 ): any {
     if (inputSchema.type !== 'object' || !inputSchema.properties) {
         throw new Error('Invalid schema type or missing properties')
     }
 
-    const schemaProperties = Object.entries(inputSchema.properties).reduce((acc, [key, _]) => {
-        acc[key] = z.any()
-        return acc
-    }, {} as Record<string, import('zod').ZodTypeAny>)
+    function createPropertySchema(schema: any): z.ZodTypeAny {
+        switch (schema.type) {
+            case 'string':
+                return z.string().describe(schema.description || '')
+            case 'number':
+                return z.number().describe(schema.description || '')
+            case 'boolean':
+                return z.boolean().describe(schema.description || '')
+            case 'array':
+                if (schema.items) {
+                    return z.array(createPropertySchema(schema.items)).describe(schema.description || '')
+                }
+                return z.array(z.any()).describe(schema.description || '')
+            case 'object':
+                if (schema.properties) {
+                    const properties = Object.entries(schema.properties).reduce((acc, [key, propSchema]) => {
+                        acc[key] = createPropertySchema(propSchema)
+                        return acc
+                    }, {} as Record<string, z.ZodTypeAny>)
+                    
+                    const objSchema = z.object(properties)
+                    
+                    // Handle required fields
+                    if (schema.required && schema.required.length > 0) {
+                        return objSchema.required(schema.required).describe(schema.description || '')
+                    }
+                    
+                    return objSchema.describe(schema.description || '')
+                }
+                return z.record(z.any()).describe(schema.description || '')
+            default:
+                return z.any().describe(schema.description || '')
+        }
+    }
 
-    return z.object(schemaProperties)
+    const schemaProperties = Object.entries(inputSchema.properties).reduce((acc, [key, propSchema]) => {
+        acc[key] = createPropertySchema(propSchema)
+        return acc
+    }, {} as Record<string, z.ZodTypeAny>)
+
+    const baseSchema = z.object(schemaProperties)
+
+    // Handle required fields at the root level
+    if (inputSchema.required && inputSchema.required.length > 0) {
+        return baseSchema.required(
+            Object.fromEntries(inputSchema.required.map((field: string) => [field, true]))
+        )
+    }
+
+    return baseSchema
 }
