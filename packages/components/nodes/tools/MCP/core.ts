@@ -134,8 +134,9 @@ export async function MCPTool({
 function createSchemaModel(
     inputSchema: {
         type: 'object'
-        properties?: import('zod').objectOutputType<{}, import('zod').ZodTypeAny, 'passthrough'> | undefined
+        properties?: Record<string, any>
         required?: string[]
+        additionalProperties?: boolean | object
     } & { [k: string]: unknown }
 ): any {
     if (inputSchema.type !== 'object' || !inputSchema.properties) {
@@ -145,8 +146,18 @@ function createSchemaModel(
     function createPropertySchema(schema: any): z.ZodTypeAny {
         switch (schema.type) {
             case 'string':
+                if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+                    return z.enum(schema.enum as [string, ...string[]]).describe(schema.description || '')
+                }
                 return z.string().describe(schema.description || '')
             case 'number':
+                if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+                    const enumLiterals = (schema.enum as number[]).map((v: number) => z.literal(v))
+                    if (enumLiterals.length === 1) {
+                        return enumLiterals[0].describe(schema.description || '')
+                    }
+                    return z.union([...enumLiterals] as [any, any, ...any[]]).describe(schema.description || '')
+                }
                 return z.number().describe(schema.description || '')
             case 'boolean':
                 return z.boolean().describe(schema.description || '')
@@ -157,19 +168,25 @@ function createSchemaModel(
                 return z.array(z.any()).describe(schema.description || '')
             case 'object':
                 if (schema.properties) {
+                    // Recursively build the object schema
                     const properties = Object.entries(schema.properties).reduce((acc, [key, propSchema]) => {
                         acc[key] = createPropertySchema(propSchema)
                         return acc
                     }, {} as Record<string, z.ZodTypeAny>)
-                    
-                    const objSchema = z.object(properties)
-                    
-                    // Handle required fields
-                    if (schema.required && schema.required.length > 0) {
-                        return objSchema.required(schema.required).describe(schema.description || '')
+                    // Mark non-required fields as optional
+                    const required = schema.required || []
+                    for (const key of Object.keys(properties)) {
+                        if (!required.includes(key)) {
+                            properties[key] = properties[key].optional()
+                        }
                     }
-                    
-                    return objSchema.describe(schema.description || '')
+                    return z.object(properties).describe(schema.description || '')
+                } else if (schema.additionalProperties) {
+                    if (schema.additionalProperties === true) {
+                        return z.record(z.any()).describe(schema.description || '')
+                    } else if (typeof schema.additionalProperties === 'object') {
+                        return z.record(createPropertySchema(schema.additionalProperties)).describe(schema.description || '')
+                    }
                 }
                 return z.record(z.any()).describe(schema.description || '')
             default:
@@ -177,18 +194,29 @@ function createSchemaModel(
         }
     }
 
-    const schemaProperties = Object.entries(inputSchema.properties).reduce((acc, [key, propSchema]) => {
+    // Build the root object schema
+    const properties = Object.entries(inputSchema.properties).reduce((acc, [key, propSchema]) => {
         acc[key] = createPropertySchema(propSchema)
         return acc
     }, {} as Record<string, z.ZodTypeAny>)
 
-    const baseSchema = z.object(schemaProperties)
+    // Mark non-required fields as optional
+    const required = inputSchema.required || []
+    for (const key of Object.keys(properties)) {
+        if (!required.includes(key)) {
+            properties[key] = properties[key].optional()
+        }
+    }
 
-    // Handle required fields at the root level
-    if (inputSchema.required && inputSchema.required.length > 0) {
-        return baseSchema.required(
-            Object.fromEntries(inputSchema.required.map((field: string) => [field, true]))
-        )
+    let baseSchema = z.object(properties)
+
+    // Handle additionalProperties at the root level
+    if (inputSchema.additionalProperties) {
+        if (inputSchema.additionalProperties === true) {
+            baseSchema = baseSchema.catchall(z.any())
+        } else if (typeof inputSchema.additionalProperties === 'object') {
+            baseSchema = baseSchema.catchall(createPropertySchema(inputSchema.additionalProperties))
+        }
     }
 
     return baseSchema
