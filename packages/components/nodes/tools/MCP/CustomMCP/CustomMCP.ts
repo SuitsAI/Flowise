@@ -101,11 +101,11 @@ class Custom_MCP implements INode {
             try {
                 mcpActions = typeof _mcpActions === 'string' ? JSON.parse(_mcpActions) : _mcpActions
             } catch (error) {
-                console.error('Error parsing mcp actions:', error)
+                mcpActions = (_mcpActions || []).split(',').map((action: string) => action.trim())
             }
         }
 
-        return tools.filter((tool: any) => mcpActions.length == 0 || mcpActions.includes(tool.name))
+        return tools.filter((tool: any) => mcpActions.includes(tool.name))
     }
 
     async getTools(nodeData: INodeData): Promise<Tool[]> {
