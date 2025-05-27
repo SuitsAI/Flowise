@@ -130,7 +130,6 @@ export async function MCPTool({
         }
     )
 }
-
 function createSchemaModel(
     inputSchema: {
         type: 'object'
