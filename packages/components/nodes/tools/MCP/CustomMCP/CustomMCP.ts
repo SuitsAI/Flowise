@@ -81,6 +81,7 @@ class Custom_MCP implements INode {
             try {
                 mcpActions = typeof _mcpActions === 'string' ? JSON.parse(_mcpActions) : _mcpActions
             } catch (error) {
+                mcpActions = _mcpActions.split(',').map((action: string) => action.trim())
                 console.error('Error parsing mcp actions:', error)
             }
         }
