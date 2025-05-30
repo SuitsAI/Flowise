@@ -10,8 +10,6 @@ export class MCPToolkit extends BaseToolkit {
     tools: Tool[] = []
     _tools: ListToolsResult | null = null
     model_config: any
-    transport: StdioClientTransport | SSEClientTransport | StreamableHTTPClientTransport | null = null
-    client: Client | null = null
     serverParams: StdioServerParameters | any
     transportType: 'stdio' | 'sse'
     constructor(serverParams: StdioServerParameters | any, transportType: 'stdio' | 'sse') {
@@ -66,25 +64,28 @@ export class MCPToolkit extends BaseToolkit {
 
     async initialize() {
         if (this._tools === null) {
-            this.client = await this.createClient()
+            let client: Client | null = null
+            try{
+                client = await this.createClient()
 
-            this._tools = await this.client.request({ method: 'tools/list' }, ListToolsResultSchema)
+                this._tools = await client.request({ method: 'tools/list' }, ListToolsResultSchema)
 
-            this.tools = await this.get_tools()
-
-            // Close the initial client after initialization
-            await this.client.close()
+                this.tools = await this.get_tools()
+            }
+            finally{
+                // Close the initial client after initialization
+                if (client) {
+                    await client.close()
+                }
+            }
         }
     }
 
     async get_tools(): Promise<Tool[]> {
-        if (this._tools === null || this.client === null) {
+        if (this._tools === null) {
             throw new Error('Must initialize the toolkit first')
         }
         const toolsPromises = this._tools.tools.map(async (tool: any) => {
-            if (this.client === null) {
-                throw new Error('Client is not initialized')
-            }
             return await MCPTool({
                 toolkit: this,
                 name: tool.name,
@@ -110,9 +111,10 @@ export async function MCPTool({
     return tool(
         async (input): Promise<string> => {
             // Create a new client for this request
-            const client = await toolkit.createClient()
+            let client: Client | null = null
 
             try {
+                client = await toolkit.createClient()
                 const req: CallToolRequest = { method: 'tools/call', params: { name: name, arguments: input } }
                 const res = await client.request(req, CallToolResultSchema)
                 const content = res.content
@@ -120,7 +122,9 @@ export async function MCPTool({
                 return contentString
             } finally {
                 // Always close the client after the request completes
-                await client.close()
+                if (client) {
+                    await client.close()
+                }
             }
         },
         {
