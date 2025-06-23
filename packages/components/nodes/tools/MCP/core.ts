@@ -87,7 +87,9 @@ export class MCPToolkit extends BaseToolkit {
             try{
                 client = await this.createClient()
 
-                this._tools = await client.request({ method: 'tools/list' }, ListToolsResultSchema)
+                // Pass timeout options to the request
+                const requestOptions = this.serverParams.options
+                this._tools = await client.request({ method: 'tools/list' }, ListToolsResultSchema, requestOptions)
 
                 this.tools = await this.get_tools()
             }
@@ -135,7 +137,11 @@ export async function MCPTool({
             try {
                 client = await toolkit.createClient()
                 const req: CallToolRequest = { method: 'tools/call', params: { name: name, arguments: input } }
-                const res = await client.request(req, CallToolResultSchema)
+                
+                // Pass timeout options to the request
+                const requestOptions = toolkit.serverParams.options
+                const res = await client.request(req, CallToolResultSchema, requestOptions)
+                
                 const content = res.content
                 const contentString = JSON.stringify(content)
                 return contentString
