@@ -303,6 +303,8 @@ export async function start(): Promise<void> {
     server.listen(port, host, () => {
         logger.info(`⚡️ [server]: Flowise Server is listening at ${host ? 'http://' + host : ''}:${port}`)
     })
+
+    server.setTimeout(600000)
 }
 
 export function getInstance(): App | undefined {
