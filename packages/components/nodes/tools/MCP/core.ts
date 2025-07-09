@@ -51,10 +51,29 @@ export class MCPToolkit extends BaseToolkit {
 
             const baseUrl = new URL(this.serverParams.url)
             try {
-                transport = new StreamableHTTPClientTransport(baseUrl)
+                if (this.serverParams.headers) {
+                    transport = new StreamableHTTPClientTransport(baseUrl, {
+                        requestInit: {
+                            headers: this.serverParams.headers
+                        }
+                    })
+                } else {
+                    transport = new StreamableHTTPClientTransport(baseUrl)
+                }
                 await client.connect(transport)
             } catch (error) {
-                transport = new SSEClientTransport(baseUrl)
+                if (this.serverParams.headers) {
+                    transport = new SSEClientTransport(baseUrl, {
+                        requestInit: {
+                            headers: this.serverParams.headers
+                        },
+                        eventSourceInit: {
+                            fetch: (url, init) => fetch(url, { ...init, headers: this.serverParams.headers })
+                        }
+                    })
+                } else {
+                    transport = new SSEClientTransport(baseUrl)
+                }
                 await client.connect(transport)
             }
         }
@@ -68,7 +87,9 @@ export class MCPToolkit extends BaseToolkit {
             try{
                 client = await this.createClient()
 
-                this._tools = await client.request({ method: 'tools/list' }, ListToolsResultSchema)
+                // Pass timeout options to the request
+                const requestOptions = this.serverParams.options
+                this._tools = await client.request({ method: 'tools/list' }, ListToolsResultSchema, requestOptions)
 
                 this.tools = await this.get_tools()
             }
@@ -116,7 +137,11 @@ export async function MCPTool({
             try {
                 client = await toolkit.createClient()
                 const req: CallToolRequest = { method: 'tools/call', params: { name: name, arguments: input } }
-                const res = await client.request(req, CallToolResultSchema)
+                
+                // Pass timeout options to the request
+                const requestOptions = toolkit.serverParams.options
+                const res = await client.request(req, CallToolResultSchema, requestOptions)
+                
                 const content = res.content
                 const contentString = JSON.stringify(content)
                 return contentString
