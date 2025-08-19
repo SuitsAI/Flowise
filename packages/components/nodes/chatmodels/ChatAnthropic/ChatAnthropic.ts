@@ -113,6 +113,14 @@ class ChatAnthropic_ChatModels implements INode {
                     'Allow image input. Refer to the <a href="https://docs.flowiseai.com/using-flowise/uploads#image" target="_blank">docs</a> for more details.',
                 default: false,
                 optional: true
+            },
+            {
+                label: 'Beta',
+                name: 'beta',
+                type: 'string',
+                description: 'Beta parameter for experimental features',
+                optional: true,
+                additionalParams: true
             }
         ]
     }
@@ -134,6 +142,7 @@ class ChatAnthropic_ChatModels implements INode {
         const cache = nodeData.inputs?.cache as BaseCache
         const extendedThinking = nodeData.inputs?.extendedThinking as boolean
         const budgetTokens = nodeData.inputs?.budgetTokens as string
+        const beta = nodeData.inputs?.beta as string
 
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const anthropicApiKey = getCredentialParam('anthropicApiKey', credentialData, nodeData)
@@ -147,6 +156,13 @@ class ChatAnthropic_ChatModels implements INode {
             streaming: streaming ?? true
         }
 
+        if (beta) obj.clientOptions = {
+            defaultHeaders: {
+                'anthropic-beta': beta
+            }
+        }
+
+        
         if (maxTokens) obj.maxTokens = parseInt(maxTokens, 10)
         if (topP) obj.topP = parseFloat(topP)
         if (topK) obj.topK = parseFloat(topK)
