@@ -60,8 +60,29 @@ export class MCPToolkit extends BaseToolkit {
                 } else {
                     transport = new StreamableHTTPClientTransport(baseUrl)
                 }
+                if (this.serverParams.headers) {
+                    transport = new StreamableHTTPClientTransport(baseUrl, {
+                        requestInit: {
+                            headers: this.serverParams.headers
+                        }
+                    })
+                } else {
+                    transport = new StreamableHTTPClientTransport(baseUrl)
+                }
                 await client.connect(transport)
             } catch (error) {
+                if (this.serverParams.headers) {
+                    transport = new SSEClientTransport(baseUrl, {
+                        requestInit: {
+                            headers: this.serverParams.headers
+                        },
+                        eventSourceInit: {
+                            fetch: (url, init) => fetch(url, { ...init, headers: this.serverParams.headers })
+                        }
+                    })
+                } else {
+                    transport = new SSEClientTransport(baseUrl)
+                }
                 if (this.serverParams.headers) {
                     transport = new SSEClientTransport(baseUrl, {
                         requestInit: {
@@ -114,7 +135,13 @@ export class MCPToolkit extends BaseToolkit {
                 argsSchema: createSchemaModel(tool.inputSchema)
             })
         })
-        return Promise.all(toolsPromises)
+        const res = await Promise.allSettled(toolsPromises)
+        const errors = res.filter((r) => r.status === 'rejected')
+        if (errors.length !== 0) {
+            console.error('MCP Tools falied to be resolved', errors)
+        }
+        const successes = res.filter((r) => r.status === 'fulfilled').map((r) => r.value)
+        return successes
     }
 }
 
@@ -136,7 +163,7 @@ export async function MCPTool({
 
             try {
                 client = await toolkit.createClient()
-                const req: CallToolRequest = { method: 'tools/call', params: { name: name, arguments: input } }
+                const req: CallToolRequest = { method: 'tools/call', params: { name: name, arguments: input as any } }
                 
                 // Pass timeout options to the request
                 const requestOptions = toolkit.serverParams.options
@@ -248,4 +275,50 @@ function createSchemaModel(
     }
 
     return baseSchema
+}
+
+export const validateArgsForLocalFileAccess = (args: string[]): void => {
+    const dangerousPatterns = [
+        // Absolute paths
+        /^\/[^/]/, // Unix absolute paths starting with /
+        /^[a-zA-Z]:\\/, // Windows absolute paths like C:\
+
+        // Relative paths that could escape current directory
+        /\.\.\//, // Parent directory traversal with ../
+        /\.\.\\/, // Parent directory traversal with ..\
+        /^\.\./, // Starting with ..
+
+        // Local file access patterns
+        /^\.\//, // Current directory with ./
+        /^~\//, // Home directory with ~/
+        /^file:\/\//, // File protocol
+
+        // Common file extensions that shouldn't be accessed
+        /\.(exe|bat|cmd|sh|ps1|vbs|scr|com|pif|dll|sys)$/i,
+
+        // File flags and options that could access local files
+        /^--?(?:file|input|output|config|load|save|import|export|read|write)=/i,
+        /^--?(?:file|input|output|config|load|save|import|export|read|write)$/i
+    ]
+
+    for (const arg of args) {
+        if (typeof arg !== 'string') continue
+
+        // Check for dangerous patterns
+        for (const pattern of dangerousPatterns) {
+            if (pattern.test(arg)) {
+                throw new Error(`Argument contains potential local file access: "${arg}"`)
+            }
+        }
+
+        // Check for null bytes
+        if (arg.includes('\0')) {
+            throw new Error(`Argument contains null byte: "${arg}"`)
+        }
+
+        // Check for very long paths that might be used for buffer overflow attacks
+        if (arg.length > 1000) {
+            throw new Error(`Argument is suspiciously long (${arg.length} characters): "${arg.substring(0, 100)}..."`)
+        }
+    }
 }

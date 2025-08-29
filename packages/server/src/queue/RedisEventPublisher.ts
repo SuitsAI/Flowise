@@ -1,5 +1,6 @@
 import { IServerSideEventStreamer } from 'flowise-components'
 import { createClient } from 'redis'
+import logger from '../utils/logger'
 
 export class RedisEventPublisher implements IServerSideEventStreamer {
     private redisPublisher: ReturnType<typeof createClient>
@@ -13,7 +14,11 @@ export class RedisEventPublisher implements IServerSideEventStreamer {
                         process.env.REDIS_KEEP_ALIVE && !isNaN(parseInt(process.env.REDIS_KEEP_ALIVE, 10))
                             ? parseInt(process.env.REDIS_KEEP_ALIVE, 10)
                             : undefined
-                }
+                },
+                pingInterval:
+                    process.env.REDIS_KEEP_ALIVE && !isNaN(parseInt(process.env.REDIS_KEEP_ALIVE, 10))
+                        ? parseInt(process.env.REDIS_KEEP_ALIVE, 10)
+                        : undefined
             })
         } else {
             this.redisPublisher = createClient({
@@ -30,9 +35,45 @@ export class RedisEventPublisher implements IServerSideEventStreamer {
                         process.env.REDIS_KEEP_ALIVE && !isNaN(parseInt(process.env.REDIS_KEEP_ALIVE, 10))
                             ? parseInt(process.env.REDIS_KEEP_ALIVE, 10)
                             : undefined
-                }
+                },
+                pingInterval:
+                    process.env.REDIS_KEEP_ALIVE && !isNaN(parseInt(process.env.REDIS_KEEP_ALIVE, 10))
+                        ? parseInt(process.env.REDIS_KEEP_ALIVE, 10)
+                        : undefined
             })
         }
+
+        this.setupEventListeners()
+    }
+
+    private setupEventListeners() {
+        this.redisPublisher.on('connect', () => {
+            logger.info(`[RedisEventPublisher] Redis client connecting...`)
+        })
+
+        this.redisPublisher.on('ready', () => {
+            logger.info(`[RedisEventPublisher] Redis client ready and connected`)
+        })
+
+        this.redisPublisher.on('error', (err) => {
+            logger.error(`[RedisEventPublisher] Redis client error:`, {
+                error: err,
+                isReady: this.redisPublisher.isReady,
+                isOpen: this.redisPublisher.isOpen
+            })
+        })
+
+        this.redisPublisher.on('end', () => {
+            logger.warn(`[RedisEventPublisher] Redis client connection ended`)
+        })
+
+        this.redisPublisher.on('reconnecting', () => {
+            logger.info(`[RedisEventPublisher] Redis client reconnecting...`)
+        })
+    }
+
+    isConnected() {
+        return this.redisPublisher.isReady
     }
 
     async connect() {
