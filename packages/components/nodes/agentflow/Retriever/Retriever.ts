@@ -119,7 +119,8 @@ class Retriever_Agentflow implements INode {
                 return returnData
             }
 
-            const stores = await appDataSource.getRepository(databaseEntities['DocumentStore']).find()
+            const searchOptions = options.searchOptions || {}
+            const stores = await appDataSource.getRepository(databaseEntities['DocumentStore']).findBy(searchOptions)
             for (const store of stores) {
                 if (store.status === 'UPSERTED') {
                     const obj = {
@@ -200,7 +201,7 @@ class Retriever_Agentflow implements INode {
             if (newState && Object.keys(newState).length > 0) {
                 for (const key in newState) {
                     if (newState[key].toString().includes('{{ output }}')) {
-                        newState[key] = finalOutput
+                        newState[key] = newState[key].replaceAll('{{ output }}', finalOutput)
                     }
                 }
             }
