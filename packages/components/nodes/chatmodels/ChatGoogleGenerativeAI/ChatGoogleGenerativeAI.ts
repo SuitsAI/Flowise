@@ -272,6 +272,10 @@ class GoogleGenerativeAI_ChatModels implements INode {
 
         const model = new ChatGoogleGenerativeAI(nodeData.id, obj)
         model.setMultiModalOption(multiModalOption)
+        
+        // Set orgId and chatflowid for image storage
+        model.orgId = options.orgId
+        model.chatflowid = options.chatflowid
 
         return model
     }

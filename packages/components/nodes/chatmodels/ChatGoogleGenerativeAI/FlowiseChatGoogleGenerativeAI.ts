@@ -37,6 +37,8 @@ import { GoogleGenerativeAIToolsOutputParser } from './utils/output_parsers.js'
 import { GoogleGenerativeAIToolType } from './utils/types.js'
 import { convertToolsToGenAI } from './utils/tools.js'
 import { IMultiModalOption, IVisionChatModal } from '../../../src'
+import { addSingleFileToStorage } from '../../../src/storageUtils'
+import { ARTIFACTS_PREFIX } from '../../../src/agents'
 
 interface TokenUsage {
     completionTokens?: number
@@ -1017,12 +1019,150 @@ export class ChatGoogleGenerativeAI extends LangchainChatGoogleGenerativeAI impl
     configuredMaxToken?: number
     multiModalOption: IMultiModalOption
     id: string
+    orgId?: string
+    chatflowid?: string
 
     constructor(id: string, fields: GoogleGenerativeAIChatInput) {
         super(fields)
         this.id = id
         this.configuredModel = fields?.model ?? ''
         this.configuredMaxToken = fields?.maxOutputTokens
+    }
+
+    /**
+     * Extract and store images from Google Generative AI response
+     */
+    private async extractAndStoreImages(
+        content: any[], 
+        chatId?: string
+    ): Promise<{ artifacts: any[], processedContent: any[], textContent: string }> {
+        const artifacts: any[] = []
+        const processedContent: any[] = []
+        let textContent = ''
+        
+        if (!this.orgId || !this.chatflowid || !chatId) {
+            // Extract text content even if we can't store images
+            for (const item of content) {
+                if (item && typeof item === 'object') {
+                    if (item.type === 'text' && item.text) {
+                        textContent += item.text
+                    }
+                } else if (typeof item === 'string') {
+                    textContent += item
+                }
+            }
+            return { artifacts, processedContent: content, textContent }
+        }
+
+        for (const item of content) {
+            if (item && typeof item === 'object') {
+                if ('inlineData' in item) {
+                    const { inlineData } = item
+                    if (inlineData && inlineData.mimeType && inlineData.data) {
+                        try {
+                            // Convert base64 data to Buffer (same as CodeInterpreterE2B)
+                            const imageData = Buffer.from(inlineData.data, 'base64')
+                            
+                            // Generate filename with timestamp (same pattern as CodeInterpreterE2B)
+                            const fileExtension = inlineData.mimeType === 'image/png' ? 'png' : 'jpg'
+                            const filename = `artifact_${Date.now()}.${fileExtension}`
+                            
+                            // Store the file using addSingleFileToStorage (same parameters as CodeInterpreterE2B)
+                            const { path } = await addSingleFileToStorage(
+                                inlineData.mimeType,   // 'image/png' or 'image/jpeg'
+                                imageData,             // Buffer containing the image data
+                                filename,              // Generated filename
+                                this.orgId,            // Organization ID
+                                this.chatflowid,       // Chat flow ID
+                                chatId                 // Chat ID
+                            )
+                            
+                            // Add to artifacts (same format as CodeInterpreterE2B)
+                            artifacts.push({ 
+                                type: fileExtension, 
+                                data: path 
+                            })
+                            
+                            // Replace the inlineData with a reference or remove it
+                            processedContent.push({
+                                type: 'image_stored',
+                                filename: filename,
+                                mimeType: inlineData.mimeType,
+                                path: path
+                            })
+                        } catch (error) {
+                            console.error('Error storing image:', error)
+                            // Keep original content if storage fails
+                            processedContent.push(item)
+                        }
+                    } else {
+                        processedContent.push(item)
+                    }
+                } else if (item.type === 'text' && item.text) {
+                    textContent += item.text
+                    processedContent.push(item)
+                } else {
+                    processedContent.push(item)
+                }
+            } else if (typeof item === 'string') {
+                textContent += item
+                processedContent.push(item)
+            } else {
+                processedContent.push(item)
+            }
+        }
+
+        return { artifacts, processedContent, textContent }
+    }
+
+    /**
+     * Override _generate to process images in response
+     */
+    async _generate(
+        messages: BaseMessage[],
+        options: this['ParsedCallOptions'],
+        runManager?: CallbackManagerForLLMRun
+    ): Promise<ChatResult> {
+        // Get the original result from parent class
+        const result = await super._generate(messages, options, runManager)
+        
+        // Extract chatId from flowConfig if available
+        const chatId = (options as any)?.flowConfig?.chatId
+        
+        // Process each generation to look for images
+        if (result.generations && result.generations.length > 0) {
+            for (let i = 0; i < result.generations.length; i++) {
+                const generation = result.generations[i]
+                const message = generation.message
+                
+                if (message && Array.isArray(message.content)) {
+                    // Extract and store images from the content
+                    const { artifacts, processedContent, textContent } = await this.extractAndStoreImages(
+                        message.content,
+                        chatId
+                    )
+                    
+                    // If we found artifacts, append them to the text response
+                    if (artifacts.length > 0) {
+                        // Append artifacts to the response (same format as CodeInterpreterE2B)
+                        const updatedText = textContent + ARTIFACTS_PREFIX + JSON.stringify(artifacts)
+                        
+                        // Update the generation text
+                        result.generations[i] = {
+                            ...generation,
+                            text: updatedText
+                        }
+                        
+                        // Update the message content if it exists
+                        if (result.generations[i].message) {
+                            result.generations[i].message.content = updatedText
+                        }
+                    }
+                }
+            }
+        }
+        
+        return result
     }
 
     revertToOriginalModel(): void {
