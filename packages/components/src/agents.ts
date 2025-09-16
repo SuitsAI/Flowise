@@ -403,6 +403,45 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
             }
             // Check if the agent has finished
             if ('returnValues' in output) {
+                // Extract artifacts from the model response if present
+                const returnValues = output.returnValues
+                
+                // Handle artifacts in content array format
+                if (Array.isArray(returnValues.output)) {
+                    const contentArray = returnValues.output
+                    const textParts = []
+                    const artifactParts = []
+                    
+                    for (const item of contentArray) {
+                        if (item.type === 'text') {
+                            textParts.push(item.text)
+                        } else if (item.type === 'artifact' && item.artifact) {
+                            artifactParts.push(item.artifact)
+                        }
+                    }
+                    
+                    if (artifactParts.length > 0) {
+                        artifacts.push(...artifactParts)
+                    }
+                    
+                    // Update output to be just the text content
+                    returnValues.output = textParts.join('')
+                }
+                // Handle artifacts in string format with ARTIFACTS_PREFIX (legacy support)
+                else if (typeof returnValues.output === 'string' && returnValues.output.includes(ARTIFACTS_PREFIX)) {
+                    const outputArray = returnValues.output.split(ARTIFACTS_PREFIX)
+                    returnValues.output = outputArray[0]
+                    try {
+                        const modelArtifacts = JSON.parse(outputArray[1])
+                        if (Array.isArray(modelArtifacts)) {
+                            artifacts.push(...modelArtifacts)
+                        } else {
+                            artifacts.push(modelArtifacts)
+                        }
+                    } catch (e) {
+                        console.error('Error parsing artifacts from model response:', e)
+                    }
+                }
                 return getOutput(output)
             }
 
