@@ -353,14 +353,29 @@ const body = $callBody;
 const options = $callOptions;
 
 try {
-	const response = await fetch(url, options);
-	const resp = await response.json();
-	return resp.text;
+    const response = await fetch(url, options);
+    const resp = await response.json();
+    let result = resp.text || '';
+    if (resp.artifacts && Array.isArray(resp.artifacts) && resp.artifacts.length > 0) {
+        const artifactLinks = resp.artifacts
+            .map(function(artifact) {
+                if (artifact && artifact.data) {
+                    return '\\n' + "${this.baseURL}/api/v1/get-upload-file?chatflowId=${this.chatflowid}&chatId=" + resp.chatId + "&fileName=" + artifact.data.replace('FILE-STORAGE::', '');
+                }
+                return null;
+            })
+            .filter(Boolean)
+            .join('\\n');
+        if (artifactLinks) {
+            result += '\\n\\n' + artifactLinks;
+        }
+    }
+    return result;
 } catch (error) {
-	console.error(error);
-	return '';
+    console.error(error);
+    return '';
 }
-`
+`;
 
         // Create additional sandbox variables
         const additionalSandbox: ICommonObject = {
