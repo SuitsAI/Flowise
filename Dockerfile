@@ -35,7 +35,7 @@ RUN pnpm build
 
 # Create serviceAccount.json from GCS_SERVICE_ACCOUNT environment variable
 RUN mkdir -p server/bin
-RUN echo "$GOOGLE_CLOUD_STORAGE_CREDENTIAL" > server/bin/serviceAccount.json
+RUN echo "$GSC_SERVICE_ACCOUNT" > server/bin/serviceAccount.json
 
 EXPOSE 3000
 
