@@ -35,7 +35,7 @@ RUN pnpm build
 
 # Create serviceAccount.json from GSC_SERVICE_ACCOUNT environment variable
 RUN mkdir -p packages/server/bin
-RUN echo "$GSC_SERVICE_ACCOUNT" | python3 -c "import sys, json; print(json.dumps(json.load(sys.stdin), indent=2))" > packages/server/bin/serviceAccount.json
+RUN python3 -c "import os, json; json.dump(json.loads(os.environ['GSC_SERVICE_ACCOUNT']), open('packages/server/bin/serviceAccount.json', 'w'), indent=2)"
 
 
 EXPOSE 3000
