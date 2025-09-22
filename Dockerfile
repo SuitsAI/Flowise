@@ -33,9 +33,10 @@ RUN pnpm install
 
 RUN pnpm build
 
-# Create serviceAccount.json from GCS_SERVICE_ACCOUNT environment variable
+# Create serviceAccount.json from GSC_SERVICE_ACCOUNT environment variable
 RUN mkdir -p packages/server/bin
-RUN echo "$GSC_SERVICE_ACCOUNT" > packages/server/bin/serviceAccount.json
+RUN echo "$GSC_SERVICE_ACCOUNT" | python3 -c "import sys, json; print(json.dumps(json.load(sys.stdin), indent=2))" > packages/server/bin/serviceAccount.json
+
 
 EXPOSE 3000
 
