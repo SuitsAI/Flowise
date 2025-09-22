@@ -34,8 +34,8 @@ RUN pnpm install
 RUN pnpm build
 
 # Create serviceAccount.json from GCS_SERVICE_ACCOUNT environment variable
-RUN mkdir -p server/bin
-RUN echo "$GSC_SERVICE_ACCOUNT" > server/bin/serviceAccount.json
+RUN mkdir -p packages/server/bin
+RUN echo "$GSC_SERVICE_ACCOUNT" > packages/server/bin/serviceAccount.json
 
 EXPOSE 3000
 
