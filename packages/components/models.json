@@ -448,6 +448,13 @@
             "name": "chatAnthropic",
             "models": [
                 {
+                    "label": "claude-sonnet-4-5",
+                    "name": "claude-sonnet-4-5",
+                    "description": "Claude 4.5 Sonnet",
+                    "input_cost": 0.000003,
+                    "output_cost": 0.000015
+                },
+                {
                     "label": "claude-opus-4-1",
                     "name": "claude-opus-4-1",
                     "description": "Claude 4.1 Opus",
