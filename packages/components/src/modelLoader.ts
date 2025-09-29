@@ -35,7 +35,7 @@ const isValidUrl = (urlString: string) => {
  */
 const getRawModelFile = async () => {
     const modelFile =
-        process.env.MODEL_LIST_CONFIG_JSON ?? 'https://raw.githubusercontent.com/FlowiseAI/Flowise/main/packages/components/models.json'
+        process.env.MODEL_LIST_CONFIG_JSON ?? getModelsJSONPath()
     try {
         if (isValidUrl(modelFile)) {
             const resp = await axios.get(modelFile)

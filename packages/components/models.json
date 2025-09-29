@@ -456,7 +456,7 @@
                 },
                 {
                     "label": "claude-sonnet-4-5",
-                    "name": "claude-sonnet-4-5-20250929",
+                    "name": "claude-sonnet-4-5",
                     "description": "Claude 4.5 Sonnet",
                     "input_cost": 0.000003,
                     "output_cost": 0.000015
