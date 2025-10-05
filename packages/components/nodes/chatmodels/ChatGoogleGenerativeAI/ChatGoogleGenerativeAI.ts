@@ -1,9 +1,9 @@
-import { HarmBlockThreshold, HarmCategory } from '@google/generative-ai'
 import type { SafetySetting } from '@google/generative-ai'
+import { HarmBlockThreshold, HarmCategory } from '@google/generative-ai'
 import { BaseCache } from '@langchain/core/caches'
 import { ICommonObject, IMultiModalOption, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
-import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
 import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
+import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
 import { ChatGoogleGenerativeAI, GoogleGenerativeAIChatInput } from './FlowiseChatGoogleGenerativeAI'
 
 class GoogleGenerativeAI_ChatModels implements INode {
@@ -272,6 +272,15 @@ class GoogleGenerativeAI_ChatModels implements INode {
 
         const model = new ChatGoogleGenerativeAI(nodeData.id, obj)
         model.setMultiModalOption(multiModalOption)
+        
+        // Set flow context if available
+        if (options.chatflowid && options.orgId && options.chatId) {
+            model.setFlowContext({
+                chatflowid: options.chatflowid,
+                orgId: options.orgId,
+                chatId: options.chatId
+            })
+        }
 
         return model
     }

@@ -1,42 +1,42 @@
 import {
-    GenerativeModel,
-    GoogleGenerativeAI as GenerativeAI,
-    FunctionDeclarationsTool as GoogleGenerativeAIFunctionDeclarationsTool,
-    FunctionDeclaration as GenerativeAIFunctionDeclaration,
-    type FunctionDeclarationSchema as GenerativeAIFunctionDeclarationSchema,
     GenerateContentRequest,
-    SafetySetting,
+    GoogleGenerativeAI as GenerativeAI,
+    FunctionDeclaration as GenerativeAIFunctionDeclaration,
     Part as GenerativeAIPart,
+    GenerativeModel,
+    FunctionDeclarationsTool as GoogleGenerativeAIFunctionDeclarationsTool,
     ModelParams,
     RequestOptions,
+    SafetySetting,
+    Schema,
     type CachedContent,
-    Schema
+    type FunctionDeclarationSchema as GenerativeAIFunctionDeclarationSchema
 } from '@google/generative-ai'
+import { NewTokenIndices } from '@langchain/core/callbacks/base'
 import { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager'
-import { AIMessageChunk, BaseMessage, UsageMetadata } from '@langchain/core/messages'
-import { ChatGenerationChunk, ChatResult } from '@langchain/core/outputs'
-import { getEnvironmentVariable } from '@langchain/core/utils/env'
+import { BaseLanguageModelInput, StructuredOutputMethodOptions } from '@langchain/core/language_models/base'
 import {
     BaseChatModel,
     type BaseChatModelCallOptions,
-    type LangSmithParams,
-    type BaseChatModelParams
+    type BaseChatModelParams,
+    type LangSmithParams
 } from '@langchain/core/language_models/chat_models'
-import { NewTokenIndices } from '@langchain/core/callbacks/base'
-import { BaseLanguageModelInput, StructuredOutputMethodOptions } from '@langchain/core/language_models/base'
-import { Runnable, RunnablePassthrough, RunnableSequence } from '@langchain/core/runnables'
-import { InferInteropZodOutput, InteropZodType, isInteropZodSchema } from '@langchain/core/utils/types'
+import { AIMessageChunk, BaseMessage, UsageMetadata } from '@langchain/core/messages'
 import { BaseLLMOutputParser, JsonOutputParser } from '@langchain/core/output_parsers'
-import { schemaToGenerativeAIParameters, removeAdditionalProperties } from './utils/zod_to_genai_parameters.js'
+import { ChatGenerationChunk, ChatResult } from '@langchain/core/outputs'
+import { Runnable, RunnablePassthrough, RunnableSequence } from '@langchain/core/runnables'
+import { getEnvironmentVariable } from '@langchain/core/utils/env'
+import { InferInteropZodOutput, InteropZodType, isInteropZodSchema } from '@langchain/core/utils/types'
+import { IMultiModalOption, IVisionChatModal } from '../../../src'
 import {
     convertBaseMessagesToContent,
     convertResponseContentToChatGenerationChunk,
     mapGenerateContentResultToChatResult
 } from './utils/common.js'
 import { GoogleGenerativeAIToolsOutputParser } from './utils/output_parsers.js'
-import { GoogleGenerativeAIToolType } from './utils/types.js'
 import { convertToolsToGenAI } from './utils/tools.js'
-import { IMultiModalOption, IVisionChatModal } from '../../../src'
+import { GoogleGenerativeAIToolType } from './utils/types.js'
+import { removeAdditionalProperties, schemaToGenerativeAIParameters } from './utils/zod_to_genai_parameters.js'
 
 interface TokenUsage {
     completionTokens?: number
@@ -767,6 +767,7 @@ export class LangchainChatGoogleGenerativeAI
         let actualPrompt = prompt
         if (prompt[0].role === 'system') {
             const [systemInstruction] = prompt
+            // @ts-ignore - accessing private property
             this.client.systemInstruction = systemInstruction
             actualPrompt = prompt.slice(1)
         }
@@ -831,6 +832,7 @@ export class LangchainChatGoogleGenerativeAI
         let actualPrompt = prompt
         if (prompt[0].role === 'system') {
             const [systemInstruction] = prompt
+            // @ts-ignore - accessing private property
             this.client.systemInstruction = systemInstruction
             actualPrompt = prompt.slice(1)
         }
@@ -871,7 +873,7 @@ export class LangchainChatGoogleGenerativeAI
                 }
             }
 
-            const chunk = convertResponseContentToChatGenerationChunk(response, {
+            const chunk = await convertResponseContentToChatGenerationChunk(response, {
                 usageMetadata,
                 index
             })
@@ -1017,6 +1019,11 @@ export class ChatGoogleGenerativeAI extends LangchainChatGoogleGenerativeAI impl
     configuredMaxToken?: number
     multiModalOption: IMultiModalOption
     id: string
+    flowContext?: {
+        chatflowid?: string
+        orgId?: string
+        chatId?: string
+    }
 
     constructor(id: string, fields: GoogleGenerativeAIChatInput) {
         super(fields)
@@ -1036,5 +1043,119 @@ export class ChatGoogleGenerativeAI extends LangchainChatGoogleGenerativeAI impl
 
     setVisionModel(): void {
         // pass
+    }
+
+    setFlowContext(context: { chatflowid?: string; orgId?: string; chatId?: string }): void {
+        this.flowContext = context
+    }
+
+    async _generate(
+        messages: BaseMessage[],
+        options: this['ParsedCallOptions'],
+        runManager?: CallbackManagerForLLMRun
+    ): Promise<ChatResult> {
+        const prompt = convertBaseMessagesToContent(messages, this._isMultimodalModel, this.useSystemInstruction)
+        let actualPrompt = prompt
+        if (prompt[0].role === 'system') {
+            const [systemInstruction] = prompt
+            // @ts-ignore - accessing private property
+            this.client.systemInstruction = systemInstruction
+            actualPrompt = prompt.slice(1)
+        }
+        const parameters = this.invocationParams(options)
+
+        // Handle streaming
+        if (this.streaming) {
+            const tokenUsage: TokenUsage = {}
+            const stream = this._streamResponseChunks(messages, options, runManager)
+            const finalChunks: Record<number, ChatGenerationChunk> = {}
+
+            for await (const chunk of stream) {
+                const index = (chunk.generationInfo as NewTokenIndices)?.completion ?? 0
+                if (finalChunks[index] === undefined) {
+                    finalChunks[index] = chunk
+                } else {
+                    finalChunks[index] = finalChunks[index].concat(chunk)
+                }
+            }
+            const generations = Object.entries(finalChunks)
+                .sort(([aKey], [bKey]) => parseInt(aKey, 10) - parseInt(bKey, 10))
+                .map(([_, value]) => value)
+
+            return { generations, llmOutput: { estimatedTokenUsage: tokenUsage } }
+        }
+
+        const res = await this.completionWithRetry({
+            ...parameters,
+            contents: actualPrompt
+        })
+
+        let usageMetadata: UsageMetadata | undefined
+        if ('usageMetadata' in res.response) {
+            const genAIUsageMetadata = res.response.usageMetadata as {
+                promptTokenCount: number | undefined
+                candidatesTokenCount: number | undefined
+                totalTokenCount: number | undefined
+            }
+            usageMetadata = {
+                input_tokens: genAIUsageMetadata.promptTokenCount ?? 0,
+                output_tokens: genAIUsageMetadata.candidatesTokenCount ?? 0,
+                total_tokens: genAIUsageMetadata.totalTokenCount ?? 0
+            }
+        }
+
+        const generationResult = mapGenerateContentResultToChatResult(res.response, {
+            usageMetadata,
+            chatflowid: this.flowContext?.chatflowid,
+            orgId: this.flowContext?.orgId,
+            chatId: this.flowContext?.chatId
+        })
+        // may not have generations in output if there was a refusal for safety reasons, malformed function call, etc.
+        if (generationResult.generations?.length > 0) {
+            await runManager?.handleLLMNewToken(generationResult.generations[0]?.text ?? '')
+        }
+        return generationResult
+    }
+
+    async *_streamResponseChunks(
+        messages: BaseMessage[],
+        options: this['ParsedCallOptions'],
+        runManager?: CallbackManagerForLLMRun
+    ): AsyncGenerator<ChatGenerationChunk> {
+        const prompt = convertBaseMessagesToContent(messages, this._isMultimodalModel, this.useSystemInstruction)
+        let actualPrompt = prompt
+        if (prompt[0].role === 'system') {
+            const [systemInstruction] = prompt
+            // @ts-ignore - accessing private property
+            this.client.systemInstruction = systemInstruction
+            actualPrompt = prompt.slice(1)
+        }
+        const parameters = this.invocationParams(options)
+
+        // @ts-ignore - accessing private property
+        const stream = await this.client.generateContentStream({
+            ...parameters,
+            contents: actualPrompt
+        })
+
+        let index = 0
+        for await (const chunk of stream.stream) {
+            const chunkResult = await convertResponseContentToChatGenerationChunk(chunk, {
+                usageMetadata: chunk.usageMetadata ? {
+                    input_tokens: chunk.usageMetadata.promptTokenCount ?? 0,
+                    output_tokens: chunk.usageMetadata.candidatesTokenCount ?? 0,
+                    total_tokens: chunk.usageMetadata.totalTokenCount ?? 0
+                } : undefined,
+                index,
+                chatflowid: this.flowContext?.chatflowid,
+                orgId: this.flowContext?.orgId,
+                chatId: this.flowContext?.chatId
+            })
+            if (chunkResult) {
+                await runManager?.handleLLMNewToken(chunkResult.text)
+                yield chunkResult
+                index += 1
+            }
+        }
     }
 }

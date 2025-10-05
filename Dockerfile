@@ -33,6 +33,14 @@ RUN pnpm install
 
 RUN pnpm build
 
+# Create serviceAccount.json from GSC_SERVICE_ACCOUNT build argument
+ARG GSC_SERVICE_ACCOUNT
+RUN echo "GSC_SERVICE_ACCOUNT length: ${#GSC_SERVICE_ACCOUNT}"
+RUN echo "GSC_SERVICE_ACCOUNT first 100 chars: ${GSC_SERVICE_ACCOUNT:0:100}"
+RUN mkdir -p packages/server/bin
+RUN printf '%s\n' "$GSC_SERVICE_ACCOUNT" > packages/server/bin/serviceAccount.json
+
+
 EXPOSE 3000
 
 CMD [ "pnpm", "start" ]

@@ -1,40 +1,42 @@
 import {
-    EnhancedGenerateContentResponse,
     Content,
-    Part,
-    type FunctionDeclarationsTool as GoogleGenerativeAIFunctionDeclarationsTool,
-    type FunctionDeclaration as GenerativeAIFunctionDeclaration,
-    POSSIBLE_ROLES,
-    FunctionCallPart,
-    TextPart,
+    EnhancedGenerateContentResponse,
     FileDataPart,
-    InlineDataPart
+    FunctionCallPart,
+    InlineDataPart,
+    POSSIBLE_ROLES,
+    Part,
+    TextPart,
+    type FunctionDeclaration as GenerativeAIFunctionDeclaration,
+    type FunctionDeclarationsTool as GoogleGenerativeAIFunctionDeclarationsTool
 } from '@google/generative-ai'
+import { isOpenAITool } from '@langchain/core/language_models/base'
 import {
     AIMessage,
     AIMessageChunk,
     BaseMessage,
     ChatMessage,
-    ToolMessage,
-    ToolMessageChunk,
     MessageContent,
     MessageContentComplex,
+    StandardContentBlockConverter,
+    ToolMessage,
+    ToolMessageChunk,
     UsageMetadata,
+    convertToProviderContentBlock,
     isAIMessage,
     isBaseMessage,
+    isDataContentBlock,
     isToolMessage,
-    StandardContentBlockConverter,
-    parseBase64DataUrl,
-    convertToProviderContentBlock,
-    isDataContentBlock
+    parseBase64DataUrl
 } from '@langchain/core/messages'
+import { ToolCallChunk } from '@langchain/core/messages/tool'
 import { ChatGeneration, ChatGenerationChunk, ChatResult } from '@langchain/core/outputs'
 import { isLangChainTool } from '@langchain/core/utils/function_calling'
-import { isOpenAITool } from '@langchain/core/language_models/base'
-import { ToolCallChunk } from '@langchain/core/messages/tool'
 import { v4 as uuidv4 } from 'uuid'
-import { jsonSchemaToGeminiParameters, schemaToGenerativeAIParameters } from './zod_to_genai_parameters.js'
+import { ARTIFACTS_PREFIX } from '../../../../src/agents'
+import { addSingleFileToStorage } from '../../../../src/storageUtils'
 import { GoogleGenerativeAIToolType } from './types.js'
+import { jsonSchemaToGeminiParameters, schemaToGenerativeAIParameters } from './zod_to_genai_parameters.js'
 
 export function getMessageAuthor(message: BaseMessage) {
     const type = message._getType()
@@ -434,6 +436,9 @@ export function mapGenerateContentResultToChatResult(
     response: EnhancedGenerateContentResponse,
     extra?: {
         usageMetadata: UsageMetadata | undefined
+        chatflowid?: string
+        orgId?: string
+        chatId?: string
     }
 ): ChatResult {
     // if rejected or error, return empty generations with reason in filters
@@ -450,6 +455,7 @@ export function mapGenerateContentResultToChatResult(
     const [candidate] = response.candidates
     const { content: candidateContent, ...generationInfo } = candidate
     let content: MessageContent | undefined
+    const artifacts: any[] = []
 
     if (Array.isArray(candidateContent?.parts) && candidateContent.parts.length === 1 && candidateContent.parts[0].text) {
         content = candidateContent.parts[0].text
@@ -470,6 +476,62 @@ export function mapGenerateContentResultToChatResult(
                     type: 'codeExecutionResult',
                     codeExecutionResult: p.codeExecutionResult
                 }
+            } else if ('inlineData' in p) {
+                // Handle inlineData for artifacts
+                const inlineData = p.inlineData
+                if (inlineData && inlineData.mimeType && inlineData.data) {
+                    // Determine file extension based on mime type
+                    let fileExtension = ''
+                    if (inlineData.mimeType === 'image/png') {
+                        fileExtension = 'png'
+                    } else if (inlineData.mimeType === 'image/jpeg' || inlineData.mimeType === 'image/jpg') {
+                        fileExtension = 'jpg'
+                    } else if (inlineData.mimeType === 'image/gif') {
+                        fileExtension = 'gif'
+                    } else if (inlineData.mimeType === 'image/webp') {
+                        fileExtension = 'webp'
+                    } else if (inlineData.mimeType === 'image/svg+xml') {
+                        fileExtension = 'svg'
+                    } else {
+                        // Default to png if unknown
+                        fileExtension = 'png'
+                    }
+
+                    const filename = `artifact_${Date.now()}.${fileExtension}`
+                    
+                    // Store the artifact if we have the required context
+                    if (extra?.chatflowid && extra?.orgId && extra?.chatId) {
+                        try {
+                            const imageData = Buffer.from(inlineData.data, 'base64')
+                            addSingleFileToStorage(
+                                inlineData.mimeType,
+                                imageData,
+                                filename,
+                                extra.orgId,
+                                extra.chatflowid,
+                                extra.chatId
+                            ).then(({ path }: { path: string }) => {
+                                artifacts.push({ type: fileExtension, data: path })
+                            }).catch((error: any) => {
+                                console.error('Error storing artifact:', error)
+                            })
+                        } catch (error) {
+                            console.error('Error processing inlineData artifact:', error)
+                        }
+                    } else {
+                        // If no context available, add base64 data as fallback
+                        artifacts.push({ 
+                            type: fileExtension, 
+                            data: `data:${inlineData.mimeType};base64,${inlineData.data}`,
+                            mimeType: inlineData.mimeType
+                        })
+                    }
+                }
+                
+                return {
+                    type: 'inlineData',
+                    inlineData: p.inlineData
+                }
             }
             return p
         })
@@ -486,8 +548,11 @@ export function mapGenerateContentResultToChatResult(
         text = block?.text ?? text
     }
 
+    // Don't append artifacts to text - they will be handled separately via llmOutput.artifacts
+    const finalText = text
+
     const generation: ChatGeneration = {
-        text,
+        text: finalText,
         message: new AIMessage({
             content: content ?? '',
             tool_calls: functionCalls?.map((fc) => {
@@ -505,7 +570,7 @@ export function mapGenerateContentResultToChatResult(
         generationInfo
     }
 
-    return {
+    const result: ChatResult = {
         generations: [generation],
         llmOutput: {
             tokenUsage: {
@@ -515,15 +580,25 @@ export function mapGenerateContentResultToChatResult(
             }
         }
     }
+
+    // Add artifacts to the result if any exist
+    if (artifacts.length > 0 && result.llmOutput) {
+        result.llmOutput.artifacts = artifacts
+    }
+
+    return result
 }
 
-export function convertResponseContentToChatGenerationChunk(
+export async function convertResponseContentToChatGenerationChunk(
     response: EnhancedGenerateContentResponse,
     extra: {
         usageMetadata?: UsageMetadata | undefined
         index: number
+        chatflowid?: string
+        orgId?: string
+        chatId?: string
     }
-): ChatGenerationChunk | null {
+): Promise<ChatGenerationChunk | null> {
     if (!response.candidates || response.candidates.length === 0) {
         return null
     }
@@ -531,41 +606,124 @@ export function convertResponseContentToChatGenerationChunk(
     const [candidate] = response.candidates
     const { content: candidateContent, ...generationInfo } = candidate
     let content: MessageContent | undefined
+    
     // Checks if some parts do not have text. If false, it means that the content is a string.
     if (Array.isArray(candidateContent?.parts) && candidateContent.parts.every((p) => 'text' in p)) {
         content = candidateContent.parts.map((p) => p.text).join('')
     } else if (Array.isArray(candidateContent?.parts)) {
-        content = candidateContent.parts.map((p) => {
+        content = []
+        for (const p of candidateContent.parts) {
             if ('text' in p) {
-                return {
+                content.push({
                     type: 'text',
                     text: p.text
-                }
+                })
             } else if ('executableCode' in p) {
-                return {
+                content.push({
                     type: 'executableCode',
                     executableCode: p.executableCode
-                }
+                })
             } else if ('codeExecutionResult' in p) {
-                return {
+                content.push({
                     type: 'codeExecutionResult',
                     codeExecutionResult: p.codeExecutionResult
+                })
+            } else if ('inlineData' in p) {
+                // Handle inlineData for artifacts
+                const inlineData = p.inlineData
+                if (inlineData && inlineData.mimeType && inlineData.data) {
+                    // Determine file extension based on mime type
+                    let fileExtension = ''
+                    if (inlineData.mimeType === 'image/png') {
+                        fileExtension = 'png'
+                    } else if (inlineData.mimeType === 'image/jpeg' || inlineData.mimeType === 'image/jpg') {
+                        fileExtension = 'jpg'
+                    } else if (inlineData.mimeType === 'image/gif') {
+                        fileExtension = 'gif'
+                    } else if (inlineData.mimeType === 'image/webp') {
+                        fileExtension = 'webp'
+                    } else if (inlineData.mimeType === 'image/svg+xml') {
+                        fileExtension = 'svg'
+                    } else {
+                        // Default to png if unknown
+                        fileExtension = 'png'
+                    }
+
+                    const filename = `artifact_${Date.now()}.${fileExtension}`
+                    
+                    // Store the artifact if we have the required context
+                    if (extra?.chatflowid && extra?.orgId && extra?.chatId) {
+                        try {
+                            const imageData = Buffer.from(inlineData.data, 'base64')
+                            const {path} = await addSingleFileToStorage(
+                                inlineData.mimeType,
+                                imageData,
+                                filename,
+                                extra.orgId,
+                                extra.chatflowid,
+                                extra.chatId
+                            )
+                            // Add artifact to content as a special artifact block
+                            content.push({
+                                type: 'artifact',
+                                artifact: { type: fileExtension, data: path }
+                            })
+                        } catch (error) {
+                            console.error('Error storing artifact:', error)
+                            // Fallback to base64 data
+                            content.push({
+                                type: 'artifact',
+                                artifact: { 
+                                    type: fileExtension, 
+                                    data: `data:${inlineData.mimeType};base64,${inlineData.data}`,
+                                    mimeType: inlineData.mimeType
+                                }
+                            })
+                        }
+                    } else {
+                        // If no context available, add base64 data as fallback
+                        content.push({
+                            type: 'artifact',
+                            artifact: { 
+                                type: fileExtension, 
+                                data: `data:${inlineData.mimeType};base64,${inlineData.data}`,
+                                mimeType: inlineData.mimeType
+                            }
+                        })
+                    }
+                } else {
+                    // Regular inlineData handling
+                    content.push({
+                        type: 'inlineData',
+                        inlineData: p.inlineData
+                    })
                 }
+            } else {
+                // Handle other part types
+                content.push(p)
             }
-            return p
-        })
+        }
     } else {
         // no content returned - likely due to abnormal stop reason, e.g. malformed function call
         content = []
     }
 
     let text = ''
+    const artifacts: any[] = []
+    
     if (content && typeof content === 'string') {
         text = content
     } else if (Array.isArray(content)) {
-        const block = content.find((b) => 'text' in b) as { text: string } | undefined
-        text = block?.text ?? ''
+        const textBlock = content.find((b) => 'text' in b) as { text: string } | undefined
+        text = textBlock?.text ?? ''
+        
+        // Extract artifacts from content
+        const artifactBlocks = content.filter((b) => 'artifact' in b) as { artifact: any }[]
+        artifacts.push(...artifactBlocks.map(block => block.artifact))
     }
+
+    // Don't append artifacts to text in streaming - they will be handled separately
+    const finalText = text
 
     const toolCallChunks: ToolCallChunk[] = []
     if (functionCalls) {
@@ -581,7 +739,7 @@ export function convertResponseContentToChatGenerationChunk(
     }
 
     return new ChatGenerationChunk({
-        text,
+        text: finalText,
         message: new AIMessageChunk({
             content: content || '',
             name: !candidateContent ? undefined : candidateContent.role,
