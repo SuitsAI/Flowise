@@ -174,6 +174,13 @@ export interface GoogleGenerativeAIChatInput extends BaseChatModelParams, Pick<G
      * - Gemini 1.0 Pro version gemini-1.0-pro-002
      */
     convertSystemMessageToHumanContent?: boolean | undefined
+
+    /**
+     * Aspect ratio for image generation.
+     * Only applicable for image generation models like gemini-2.5-flash-image.
+     * Example values: "16:9", "1:1", "9:16", "4:3", "3:4"
+     */
+    aspectRatio?: string
 }
 
 /**
@@ -599,6 +606,8 @@ export class LangchainChatGoogleGenerativeAI
 
     convertSystemMessageToHumanContent: boolean | undefined
 
+    aspectRatio?: string
+
     private client: GenerativeModel
 
     get _isMultimodalModel() {
@@ -657,6 +666,7 @@ export class LangchainChatGoogleGenerativeAI
 
         this.streaming = fields.streaming ?? this.streaming
         this.json = fields.json
+        this.aspectRatio = fields.aspectRatio
 
         this.client = new GenerativeAI(this.apiKey).getGenerativeModel(
             {
@@ -752,10 +762,23 @@ export class LangchainChatGoogleGenerativeAI
             this.client.generationConfig.responseMimeType = this.json ? 'application/json' : undefined
         }
 
-        return {
+        const params: any = {
             ...(toolsAndConfig?.tools ? { tools: toolsAndConfig.tools } : {}),
             ...(toolsAndConfig?.toolConfig ? { toolConfig: toolsAndConfig.toolConfig } : {})
         }
+
+        // Add imageConfig for image generation models
+        if (this.aspectRatio) {
+            params.generationConfig = {
+                ...this.client.generationConfig,
+                responseModalities: ['image'],
+                imageConfig: {
+                    aspectRatio: this.aspectRatio
+                }
+            }
+        }
+
+        return params
     }
 
     async _generate(

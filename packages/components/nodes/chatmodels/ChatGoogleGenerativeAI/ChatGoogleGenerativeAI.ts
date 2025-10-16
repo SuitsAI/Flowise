@@ -190,6 +190,16 @@ class GoogleGenerativeAI_ChatModels implements INode {
                     'Allow image input. Refer to the <a href="https://docs.flowiseai.com/using-flowise/uploads#image" target="_blank">docs</a> for more details.',
                 default: false,
                 optional: true
+            },
+            {
+                label: 'Aspect Ratio',
+                name: 'aspectRatio',
+                type: 'string',
+                placeholder: '16:9',
+                description:
+                    'Aspect ratio for image generation (e.g., 16:9, 1:1, 9:16). Only applicable for image generation models like gemini-2.5-flash-image.',
+                optional: true,
+                additionalParams: true
             }
         ]
     }
@@ -218,6 +228,7 @@ class GoogleGenerativeAI_ChatModels implements INode {
         const baseUrl = nodeData.inputs?.baseUrl as string | undefined
 
         const allowImageUploads = nodeData.inputs?.allowImageUploads as boolean
+        const aspectRatio = nodeData.inputs?.aspectRatio as string
 
         const obj: GoogleGenerativeAIChatInput = {
             apiKey: apiKey,
@@ -235,6 +246,7 @@ class GoogleGenerativeAI_ChatModels implements INode {
         if (cache) obj.cache = cache
         if (temperature) obj.temperature = parseFloat(temperature)
         if (baseUrl) obj.baseUrl = baseUrl
+        if (aspectRatio) obj.aspectRatio = aspectRatio
 
         let safetySettings: SafetySetting[] = []
         if (_safetySettings) {
