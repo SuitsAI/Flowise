@@ -34,17 +34,16 @@ const isValidUrl = (urlString: string) => {
  * If any of the loading fails, fallback to the default models.json file on disk
  */
 const getRawModelFile = async () => {
-    const modelFile =
-        process.env.MODEL_LIST_CONFIG_JSON ?? 'https://raw.githubusercontent.com/FlowiseAI/Flowise/main/packages/components/models.json'
+    const modelFile = process.env.MODEL_LIST_CONFIG_JSON
     try {
-        if (isValidUrl(modelFile)) {
+        if (modelFile && isValidUrl(modelFile)) {
             const resp = await axios.get(modelFile)
             if (resp.status === 200 && resp.data) {
                 return resp.data
             } else {
                 throw new Error('Error fetching model list')
             }
-        } else if (fs.existsSync(modelFile)) {
+        } else if (modelFile && fs.existsSync(modelFile)) {
             const models = await fs.promises.readFile(modelFile, 'utf8')
             if (models) {
                 return JSON.parse(models)
