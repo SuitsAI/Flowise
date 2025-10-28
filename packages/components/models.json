@@ -1953,6 +1953,11 @@
                 {
                     "label": "text-multilingual-embedding-002",
                     "name": "text-multilingual-embedding-002"
+                },
+                {
+                    "label": "multimodalembedding@001",
+                    "name": "multimodalembedding@001",
+                    "description": "Multimodal embedding model (1408 dimensions) - for querying image/video embeddings with text"
                 }
             ],
             "regions": [
