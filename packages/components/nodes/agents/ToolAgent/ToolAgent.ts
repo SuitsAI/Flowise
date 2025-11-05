@@ -221,6 +221,11 @@ class ToolAgent_Agents implements INode {
         output = extractOutputFromArray(res?.output)
         output = removeInvalidImageMarkdown(output)
 
+        let outputForHistory = output;
+        if(res.artifacts && res.artifacts.length > 0) {
+            outputForHistory += '\n\n' + res.artifacts.map((artifact: any) => artifact.data).join('\n')
+        }
+
         // Claude 3 Opus tends to spit out <thinking>..</thinking> as well, discard that in final output
         // https://docs.anthropic.com/en/docs/build-with-claude/tool-use#chain-of-thought
         const regexPattern: RegExp = /<thinking>[\s\S]*?<\/thinking>/
@@ -238,7 +243,7 @@ class ToolAgent_Agents implements INode {
                     type: 'userMessage'
                 },
                 {
-                    text: output,
+                    text: outputForHistory,
                     type: 'apiMessage'
                 }
             ],
