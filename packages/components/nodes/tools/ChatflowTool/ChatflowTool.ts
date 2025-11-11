@@ -360,7 +360,8 @@ try {
         const artifactLinks = resp.artifacts
             .map(function(artifact) {
                 if (artifact && artifact.data) {
-                    return '\\n' + "${this.baseURL}/api/v1/get-upload-file?chatflowId=${this.chatflowid}&chatId=" + resp.chatId + "&fileName=" + artifact.data.replace('FILE-STORAGE::', '');
+                    const url = "${this.baseURL}/api/v1/get-upload-file?chatflowId=${this.chatflowid}&chatId=" + resp.chatId + "&fileName=" + artifact.data.replace('FILE-STORAGE::', '');
+                    return '\\n![](' + url + ')';
                 }
                 return null;
             })
