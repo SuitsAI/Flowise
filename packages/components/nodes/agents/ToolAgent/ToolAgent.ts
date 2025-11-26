@@ -110,6 +110,15 @@ class ToolAgent_Agents implements INode {
                 description: 'Stream detailed intermediate steps during agent execution',
                 optional: true,
                 additionalParams: true
+            },
+            {
+                label: 'Save Tools Results',
+                name: 'saveToolsResults',
+                type: 'boolean',
+                default: false,
+                description: 'Save the results of the tools used to the memory',
+                optional: true,
+                additionalParams: true
             }
         ]
         this.sessionId = fields?.sessionId
@@ -244,8 +253,8 @@ class ToolAgent_Agents implements INode {
                     type: 'userMessage'
                 },
                 {
-                    text: outputForHistory,
-                    type: 'apiMessage'
+                    text: outputForHistory + (nodeData.inputs?.saveToolsResults ? '\n\n Tools used: ' + res.usedTools.map((tool: any) => JSON.stringify(tool)).join('\n') : ''),
+                    type: 'apiMessage',
                 }
             ],
             this.sessionId
