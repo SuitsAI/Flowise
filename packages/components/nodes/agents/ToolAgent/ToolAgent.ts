@@ -253,7 +253,7 @@ class ToolAgent_Agents implements INode {
                     type: 'userMessage'
                 },
                 {
-                    text: outputForHistory + (nodeData.inputs?.saveToolsResults ? '\n\n Tools used: ' + res.usedTools.map((tool: any) => JSON.stringify(tool)).join('\n') : ''),
+                    text: outputForHistory + (nodeData.inputs?.saveToolsResults && res.usedTools && res.usedTools.length ? '\n\n Tools used: ' + res.usedTools.map((tool: any) => JSON.stringify(tool)).join('\n') : ''),
                     type: 'apiMessage',
                 }
             ],
