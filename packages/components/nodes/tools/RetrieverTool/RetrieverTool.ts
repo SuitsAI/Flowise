@@ -72,7 +72,7 @@ class DynamicStructuredTool<T extends z.ZodObject<any, any, any, any> = z.ZodObj
             { verbose: this.verbose }
         )
         const runManager = await callbackManager_?.handleToolStart(
-            this.toJSON(),
+            {...this.toJSON(), name: this.name},
             typeof parsed === 'string' ? parsed : JSON.stringify(parsed),
             undefined,
             undefined,

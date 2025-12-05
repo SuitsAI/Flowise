@@ -188,7 +188,7 @@ export class DynamicStructuredTool<
             { verbose: this.verbose }
         )
         const runManager = await callbackManager_?.handleToolStart(
-            this.toJSON(),
+            {...this.toJSON(), name: this.name},
             typeof parsed === 'string' ? parsed : JSON.stringify(parsed),
             undefined,
             undefined,
