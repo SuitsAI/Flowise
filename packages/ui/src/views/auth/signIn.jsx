@@ -112,7 +112,7 @@ const SignInPage = () => {
         if (loginApi.data) {
             setLoading(false)
             store.dispatch(loginSuccess(loginApi.data))
-            navigate(location.state?.path || '/chatflows')
+            navigate(location.state?.path || '/')
             //navigate(0)
         }
 
@@ -122,7 +122,7 @@ const SignInPage = () => {
     useEffect(() => {
         if (ssoLoginApi.data) {
             store.dispatch(loginSuccess(ssoLoginApi.data))
-            navigate(location.state?.path || '/chatflows')
+            navigate(location.state?.path || '/')
         }
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -241,18 +241,6 @@ const SignInPage = () => {
                                         Forgot password?
                                     </Link>
                                 </Typography>
-                                {isCloud && (
-                                    <Typography variant='body2' sx={{ color: theme.palette.grey[600], mt: 1, textAlign: 'right' }}>
-                                        <a
-                                            href='https://docs.flowiseai.com/migration-guide/cloud-migration'
-                                            target='_blank'
-                                            rel='noopener noreferrer'
-                                            style={{ color: theme.palette.primary.main }}
-                                        >
-                                            Migrate from existing account?
-                                        </a>
-                                    </Typography>
-                                )}
                             </Box>
                             <LoadingButton
                                 loading={loading}

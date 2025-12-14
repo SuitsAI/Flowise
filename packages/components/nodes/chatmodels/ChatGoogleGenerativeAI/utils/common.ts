@@ -38,6 +38,54 @@ import { addSingleFileToStorage } from '../../../../src/storageUtils'
 import { GoogleGenerativeAIToolType } from './types.js'
 import { jsonSchemaToGeminiParameters, schemaToGenerativeAIParameters } from './zod_to_genai_parameters.js'
 
+/**
+ * Extracts thought signature from a Part if it exists.
+ * Thought signatures are found directly on FunctionCallPart as thoughtSignature (per SDK type definitions).
+ * Note: extra_content is a LangChain-specific field and may exist in responses, but we should only
+ * extract from the direct thoughtSignature field to match what the API expects.
+ * According to Google's documentation: https://ai.google.dev/gemini-api/docs/thought-signatures
+ */
+function extractThoughtSignature(part: Part): string | undefined {
+    const partAny = part as any
+    
+    // Check if it's directly on the part (FunctionCallPart has thoughtSignature?: string)
+    // This is the primary and correct location per SDK type definitions
+    if ('functionCall' in part && partAny.thoughtSignature && typeof partAny.thoughtSignature === 'string') {
+        return partAny.thoughtSignature
+    }
+    
+    // Fallback: Check extra_content.google.thought_signature (may exist in LangChain responses)
+    // But note: we should NOT set this when creating parts - only extract it if present
+    if (partAny.extra_content?.google?.thought_signature) {
+        return partAny.extra_content.google.thought_signature
+    }
+    
+    return undefined
+}
+
+/**
+ * Creates a Part with thought signature if provided.
+ * According to the SDK type definitions, FunctionCallPart has thoughtSignature?: string directly on it.
+ * The Gemini API only accepts thoughtSignature directly on the part, NOT in extra_content.
+ * extra_content is a LangChain-specific field and causes API validation errors.
+ * This is required for Gemini 3 Pro to preserve reasoning context across turns.
+ */
+function createPartWithThoughtSignature(part: Part, thoughtSignature?: string): Part {
+    if (!thoughtSignature) {
+        return part
+    }
+    
+    const partWithSignature = { ...part } as any
+    
+    // Set directly on the part (per SDK type definition and API requirements)
+    // DO NOT set in extra_content as it causes "Unknown name extra_content" API errors
+    if ('functionCall' in part) {
+        partWithSignature.thoughtSignature = thoughtSignature
+    }
+    
+    return partWithSignature as Part
+}
+
 export function getMessageAuthor(message: BaseMessage) {
     const type = message._getType()
     if (ChatMessage.isInstance(message)) {
@@ -50,6 +98,8 @@ export function getMessageAuthor(message: BaseMessage) {
 }
 
 /**
+ * !!! IMPORTANT: Must return 'user' as default instead of throwing error
+ * https://github.com/FlowiseAI/Flowise/issues/4743
  * Maps a message type to a Google Generative AI chat author.
  * @param message The message to map.
  * @param model The model to use for mapping.
@@ -363,14 +413,81 @@ export function convertMessageContentToParts(message: BaseMessage, isMultimodalM
     }
 
     if (isAIMessage(message) && message.tool_calls?.length) {
-        functionCalls = message.tool_calls.map((tc) => {
-            return {
+        // Extract thought signatures from additional_kwargs if they exist
+        // Thought signatures are stored per tool call, keyed by tool call index or id
+        const thoughtSignatures = (message.additional_kwargs?.thought_signatures as Record<string, string>) || {}
+        
+        // For Gemini 3 Pro, ALL function calls in the current turn must have thought signatures
+        // For parallel calls, only the first one has a signature in the response
+        // But when sending back, ALL function calls in the same step need the signature
+        // Find the signature to use for all calls (from first call, _first_parallel, or any available)
+        let signatureForAllCalls: string | undefined = undefined
+        
+        // Try to find a signature from various sources
+        // 1. Check the special parallel key (stored when we extracted from response)
+        signatureForAllCalls = thoughtSignatures['_first_parallel']
+        
+        // 2. Check the first call's signature (by index 0 or id)
+        if (!signatureForAllCalls && message.tool_calls[0]) {
+            const firstCall = message.tool_calls[0]
+            signatureForAllCalls = (firstCall.id ? thoughtSignatures[firstCall.id] : undefined) || 
+                                   thoughtSignatures['0'] ||
+                                   thoughtSignatures[0]
+        }
+        
+        // 3. Check any available signature (for sequential calls where each has one)
+        if (!signatureForAllCalls) {
+            const anySignature = Object.values(thoughtSignatures).find(sig => typeof sig === 'string' && sig.length > 0)
+            if (anySignature) {
+                signatureForAllCalls = anySignature
+            }
+        }
+        
+        functionCalls = message.tool_calls.map((tc, index) => {
+            const basePart: any = {
                 functionCall: {
                     name: tc.name,
                     args: tc.args
                 }
             }
+            
+            // Get thought signature for this specific tool call (by id or index)
+            let thoughtSignature: string | undefined = (tc.id ? thoughtSignatures[tc.id] : undefined) || 
+                                                       thoughtSignatures[String(index)] || 
+                                                       undefined
+            
+            // If this call doesn't have its own signature, use the signature for all calls
+            // This ensures ALL parallel calls get the signature (required for Gemini 3 Pro)
+            if (!thoughtSignature) {
+                thoughtSignature = signatureForAllCalls
+            }
+            
+            // According to Google docs for Gemini 3 Pro:
+            // "The first functionCall part in each step of the current turn must include its thought_signature"
+            // For parallel calls, all calls in the same step should use the first call's signature
+            
+            // If we still don't have a signature, use a dummy signature as fallback
+            // According to Google's FAQ, we can use these dummy signatures to skip validation
+            // when transferring from a different model or when signatures weren't captured
+            if (!thoughtSignature) {
+                // Use dummy signature as last resort to avoid validation errors
+                // This is acceptable per Google's documentation for cases where signatures weren't captured
+                thoughtSignature = 'skip_thought_signature_validator'
+            }
+            
+            // Always attach the signature (either real or dummy) to avoid validation errors
+            return createPartWithThoughtSignature(basePart, thoughtSignature) as FunctionCallPart
         })
+    }
+
+    // If there are no function calls but there's a thought signature in the last part,
+    // preserve it on the last message part
+    if (isAIMessage(message) && !message.tool_calls?.length && messageParts.length > 0) {
+        const thoughtSignature = message.additional_kwargs?.thought_signature as string | undefined
+        if (thoughtSignature) {
+            const lastIndex = messageParts.length - 1
+            messageParts[lastIndex] = createPartWithThoughtSignature(messageParts[lastIndex], thoughtSignature)
+        }
     }
 
     return [...messageParts, ...functionCalls]
@@ -456,11 +573,45 @@ export function mapGenerateContentResultToChatResult(
     const { content: candidateContent, ...generationInfo } = candidate
     let content: MessageContent | undefined
     const artifacts: any[] = []
+    
+    // Extract thought signatures from parts
+    const thoughtSignatures: Record<string, string> = {}
+    let lastPartThoughtSignature: string | undefined
 
     if (Array.isArray(candidateContent?.parts) && candidateContent.parts.length === 1 && candidateContent.parts[0].text) {
         content = candidateContent.parts[0].text
+        // Check for thought signature in text part
+        lastPartThoughtSignature = extractThoughtSignature(candidateContent.parts[0])
     } else if (Array.isArray(candidateContent?.parts) && candidateContent.parts.length > 0) {
-        content = candidateContent.parts.map((p) => {
+        // Process parts and extract thought signatures
+        let functionCallIndex = 0
+        
+        content = candidateContent.parts.map((p: Part, partIndex: number) => {
+            // Extract thought signature from function call parts
+            if ('functionCall' in p && p.functionCall) {
+                const fc = functionCalls?.[functionCallIndex]
+                const thoughtSignature = extractThoughtSignature(p)
+                if (thoughtSignature) {
+                    // For parallel calls, only first has signature
+                    // For sequential calls, each has signature
+                    // Store by function call index and ID
+                    const fcId = (fc && 'id' in fc && typeof fc.id === 'string') ? fc.id : String(functionCallIndex)
+                    thoughtSignatures[fcId] = thoughtSignature
+                    thoughtSignatures[String(functionCallIndex)] = thoughtSignature
+                    
+                    // For parallel calls, also store under a special key so all parallel calls can access it
+                    // This ensures that when we send back parallel calls, all can use the first call's signature
+                    if (functionCallIndex === 0) {
+                        thoughtSignatures['_first_parallel'] = thoughtSignature
+                    }
+                }
+                functionCallIndex++
+            }
+            
+            // Check last part for thought signature (when no function calls)
+            if (partIndex === candidateContent.parts.length - 1 && functionCalls?.length === 0) {
+                lastPartThoughtSignature = extractThoughtSignature(p)
+            }
             if ('text' in p) {
                 return {
                     type: 'text',
@@ -551,6 +702,21 @@ export function mapGenerateContentResultToChatResult(
     // Don't append artifacts to text - they will be handled separately via llmOutput.artifacts
     const finalText = text
 
+    // Prepare additional_kwargs with thought signatures
+    const additionalKwargs: Record<string, any> = {
+        ...generationInfo
+    }
+    
+    // Store thought signatures if any were found
+    if (Object.keys(thoughtSignatures).length > 0) {
+        additionalKwargs.thought_signatures = thoughtSignatures
+    }
+    
+    // Store last part thought signature if no function calls
+    if (lastPartThoughtSignature && functionCalls?.length === 0) {
+        additionalKwargs.thought_signature = lastPartThoughtSignature
+    }
+
     const generation: ChatGeneration = {
         text: finalText,
         message: new AIMessage({
@@ -562,9 +728,7 @@ export function mapGenerateContentResultToChatResult(
                     id: 'id' in fc && typeof fc.id === 'string' ? fc.id : uuidv4()
                 }
             }),
-            additional_kwargs: {
-                ...generationInfo
-            },
+            additional_kwargs: additionalKwargs,
             usage_metadata: extra?.usageMetadata
         }),
         generationInfo
@@ -607,12 +771,44 @@ export async function convertResponseContentToChatGenerationChunk(
     const { content: candidateContent, ...generationInfo } = candidate
     let content: MessageContent | undefined
     
+    // Extract thought signatures from parts for streaming
+    const thoughtSignatures: Record<string, string> = {}
+    let lastPartThoughtSignature: string | undefined
+    
     // Checks if some parts do not have text. If false, it means that the content is a string.
-    if (Array.isArray(candidateContent?.parts) && candidateContent.parts.every((p) => 'text' in p)) {
-        content = candidateContent.parts.map((p) => p.text).join('')
+    if (Array.isArray(candidateContent?.parts) && candidateContent.parts.every((p: Part) => 'text' in p)) {
+        content = candidateContent.parts.map((p: Part) => p.text).join('')
+        // Check last part for thought signature
+        if (candidateContent.parts.length > 0) {
+            lastPartThoughtSignature = extractThoughtSignature(candidateContent.parts[candidateContent.parts.length - 1])
+        }
     } else if (Array.isArray(candidateContent?.parts)) {
         content = []
-        for (const p of candidateContent.parts) {
+        let functionCallIndex = 0
+        for (let partIndex = 0; partIndex < candidateContent.parts.length; partIndex++) {
+            const p = candidateContent.parts[partIndex]
+            
+            // Extract thought signature from function call parts
+            if ('functionCall' in p && p.functionCall) {
+                const thoughtSignature = extractThoughtSignature(p)
+                if (thoughtSignature) {
+                    const fc = functionCalls?.[functionCallIndex]
+                    const fcId = (fc && 'id' in fc && typeof fc.id === 'string') ? fc.id : String(functionCallIndex)
+                    thoughtSignatures[fcId] = thoughtSignature
+                    thoughtSignatures[String(functionCallIndex)] = thoughtSignature
+                    
+                    // For parallel calls, also store under a special key so all parallel calls can access it
+                    if (functionCallIndex === 0) {
+                        thoughtSignatures['_first_parallel'] = thoughtSignature
+                    }
+                }
+                functionCallIndex++
+            }
+            
+            // Check last part for thought signature (when no function calls)
+            if (partIndex === candidateContent.parts.length - 1 && functionCalls?.length === 0) {
+                lastPartThoughtSignature = extractThoughtSignature(p)
+            }
             if ('text' in p) {
                 content.push({
                     type: 'text',
@@ -737,6 +933,15 @@ export async function convertResponseContentToChatGenerationChunk(
             }))
         )
     }
+    
+    // Prepare additional_kwargs with thought signatures for streaming
+    const additionalKwargs: Record<string, any> = {}
+    if (Object.keys(thoughtSignatures).length > 0) {
+        additionalKwargs.thought_signatures = thoughtSignatures
+    }
+    if (lastPartThoughtSignature && functionCalls?.length === 0) {
+        additionalKwargs.thought_signature = lastPartThoughtSignature
+    }
 
     return new ChatGenerationChunk({
         text: finalText,
@@ -744,9 +949,8 @@ export async function convertResponseContentToChatGenerationChunk(
             content: content || '',
             name: !candidateContent ? undefined : candidateContent.role,
             tool_call_chunks: toolCallChunks,
-            // Each chunk can have unique "generationInfo", and merging strategy is unclear,
-            // so leave blank for now.
-            additional_kwargs: {},
+            // Store thought signatures in additional_kwargs for later retrieval
+            additional_kwargs: additionalKwargs,
             usage_metadata: extra.usageMetadata
         }),
         generationInfo

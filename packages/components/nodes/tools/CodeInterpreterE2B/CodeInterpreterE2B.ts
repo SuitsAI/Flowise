@@ -1,5 +1,5 @@
 import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
-import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
+import { getBaseClasses, getCredentialData, getCredentialParam, parseWithTypeConversion } from '../../../src/utils'
 import { StructuredTool, ToolInputParsingException, ToolParams } from '@langchain/core/tools'
 import { Sandbox } from '@e2b/code-interpreter'
 import { z } from 'zod'
@@ -174,7 +174,7 @@ export class E2BTool extends StructuredTool {
         }
         let parsed
         try {
-            parsed = await this.schema.parseAsync(arg)
+            parsed = await parseWithTypeConversion(this.schema, arg)
         } catch (e) {
             throw new ToolInputParsingException(`Received tool input did not match expected schema`, JSON.stringify(arg))
         }
@@ -188,7 +188,7 @@ export class E2BTool extends StructuredTool {
             { verbose: this.verbose }
         )
         const runManager = await callbackManager_?.handleToolStart(
-            this.toJSON(),
+            {...this.toJSON(), name: this.name},
             typeof parsed === 'string' ? parsed : JSON.stringify(parsed),
             undefined,
             undefined,

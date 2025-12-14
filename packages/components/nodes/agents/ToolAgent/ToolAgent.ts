@@ -221,8 +221,7 @@ class ToolAgent_Agents implements INode {
         output = extractOutputFromArray(res?.output)
         output = removeInvalidImageMarkdown(output)
 
-        let outputForHistory = output
-
+        let outputForHistory = output;
         if(res.artifacts && res.artifacts.length > 0) {
             outputForHistory += '\n\n' + res.artifacts.map((artifact: any) => artifact.data).join('\n')
         }

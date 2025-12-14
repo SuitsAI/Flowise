@@ -181,6 +181,8 @@ export interface GoogleGenerativeAIChatInput extends BaseChatModelParams, Pick<G
      * Example values: "16:9", "1:1", "9:16", "4:3", "3:4"
      */
     aspectRatio?: string
+    /** Thinking budget for Gemini 2.5 thinking models. Supports -1 (dynamic), 0 (off), or positive integers. */
+    thinkingBudget?: number
 }
 
 /**
@@ -607,11 +609,12 @@ export class LangchainChatGoogleGenerativeAI
     convertSystemMessageToHumanContent: boolean | undefined
 
     aspectRatio?: string
+    thinkingBudget?: number
 
     private client: GenerativeModel
 
     get _isMultimodalModel() {
-        return this.model.includes('vision') || this.model.startsWith('gemini-1.5') || this.model.startsWith('gemini-2')
+        return this.model.includes('vision') || this.model.startsWith('gemini-1.5') || this.model.startsWith('gemini-2') || this.model.startsWith('gemini-3')
     }
 
     constructor(fields: GoogleGenerativeAIChatInput) {
@@ -667,6 +670,7 @@ export class LangchainChatGoogleGenerativeAI
         this.streaming = fields.streaming ?? this.streaming
         this.json = fields.json
         this.aspectRatio = fields.aspectRatio
+        this.thinkingBudget = fields.thinkingBudget
 
         this.client = new GenerativeAI(this.apiKey).getGenerativeModel(
             {
@@ -686,12 +690,22 @@ export class LangchainChatGoogleGenerativeAI
                 baseUrl: fields.baseUrl
             }
         )
+        if (this.thinkingBudget !== undefined) {
+            ;(this.client.generationConfig as any).thinkingConfig = {
+                ...(this.thinkingBudget !== undefined ? { thinkingBudget: this.thinkingBudget } : {})
+            }
+        }
         this.streamUsage = fields.streamUsage ?? this.streamUsage
     }
 
     useCachedContent(cachedContent: CachedContent, modelParams?: ModelParams, requestOptions?: RequestOptions): void {
         if (!this.apiKey) return
         this.client = new GenerativeAI(this.apiKey).getGenerativeModelFromCachedContent(cachedContent, modelParams, requestOptions)
+        if (this.thinkingBudget !== undefined) {
+            ;(this.client.generationConfig as any).thinkingConfig = {
+                ...(this.thinkingBudget !== undefined ? { thinkingBudget: this.thinkingBudget } : {})
+            }
+        }
     }
 
     get useSystemInstruction(): boolean {
@@ -794,6 +808,12 @@ export class LangchainChatGoogleGenerativeAI
             this.client.systemInstruction = systemInstruction
             actualPrompt = prompt.slice(1)
         }
+
+        // Ensure actualPrompt is never empty
+        if (actualPrompt.length === 0) {
+            actualPrompt = [{ role: 'user', parts: [{ text: '...' }] }]
+        }
+
         const parameters = this.invocationParams(options)
 
         // Handle streaming
@@ -859,6 +879,12 @@ export class LangchainChatGoogleGenerativeAI
             this.client.systemInstruction = systemInstruction
             actualPrompt = prompt.slice(1)
         }
+
+        // Ensure actualPrompt is never empty
+        if (actualPrompt.length === 0) {
+            actualPrompt = [{ role: 'user', parts: [{ text: '...' }] }]
+        }
+
         const parameters = this.invocationParams(options)
         const request = {
             ...parameters,
