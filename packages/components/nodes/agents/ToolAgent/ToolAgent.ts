@@ -110,6 +110,15 @@ class ToolAgent_Agents implements INode {
                 description: 'Stream detailed intermediate steps during agent execution',
                 optional: true,
                 additionalParams: true
+            },
+            {
+                label: 'Base URL',
+                name: 'baseURL',
+                type: 'string',
+                default: 'http://localhost:3000',
+                description: 'Base URL of the server',
+                optional: true,
+                additionalParams: true
             }
         ]
         this.sessionId = fields?.sessionId
@@ -223,7 +232,9 @@ class ToolAgent_Agents implements INode {
 
         let outputForHistory = output;
         if(res.artifacts && res.artifacts.length > 0) {
-            outputForHistory += '\n\n' + res.artifacts.map((artifact: any) => artifact.data).join('\n')
+            outputForHistory += '\n\n' + res.artifacts.map((artifact: any) => `${nodeData.inputs?.baseURL}/api/v1/get-upload-file?chatflowId=${options.chatflowid}&chatId=${options.chatId}&fileName=${artifact.data.replace('FILE-STORAGE::', '')}`).join('\n')
+
+            //${this.baseURL}/api/v1/get-upload-file?chatflowId=${this.chatflowid}&chatId=" + resp.chatId + "&fileName=" + artifact.data.replace('FILE-STORAGE::', '')
         }
 
         // Claude 3 Opus tends to spit out <thinking>..</thinking> as well, discard that in final output
