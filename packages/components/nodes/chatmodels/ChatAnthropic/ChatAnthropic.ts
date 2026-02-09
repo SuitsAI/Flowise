@@ -21,7 +21,7 @@ class ChatAnthropic_ChatModels implements INode {
     constructor() {
         this.label = 'ChatAnthropic'
         this.name = 'chatAnthropic'
-        this.version = 8.0
+        this.version = 9.0
         this.type = 'ChatAnthropic'
         this.icon = 'Anthropic.svg'
         this.category = 'Chat Models'
@@ -106,6 +106,16 @@ class ChatAnthropic_ChatModels implements INode {
                 additionalParams: true
             },
             {
+                label: 'Prompt Caching',
+                name: 'promptCaching',
+                type: 'boolean',
+                description:
+                    'Enable <a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" target="_blank">Anthropic Prompt Caching</a> to reduce costs and latency by caching system prompts and conversation history. Cached input tokens are billed at 10% of base price. Minimum cacheable length varies by model (1024-4096 tokens).',
+                default: false,
+                optional: true,
+                additionalParams: true
+            },
+            {
                 label: 'Allow Image Uploads',
                 name: 'allowImageUploads',
                 type: 'boolean',
@@ -143,6 +153,7 @@ class ChatAnthropic_ChatModels implements INode {
         const extendedThinking = nodeData.inputs?.extendedThinking as boolean
         const budgetTokens = nodeData.inputs?.budgetTokens as string
         const beta = nodeData.inputs?.beta as string
+        const promptCaching = nodeData.inputs?.promptCaching as boolean
 
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const anthropicApiKey = getCredentialParam('anthropicApiKey', credentialData, nodeData)
@@ -181,7 +192,7 @@ class ChatAnthropic_ChatModels implements INode {
             }
         }
 
-        const model = new ChatAnthropic(nodeData.id, obj)
+        const model = new ChatAnthropic(nodeData.id, obj, promptCaching ?? false)
         model.setMultiModalOption(multiModalOption)
         return model
     }
