@@ -6,21 +6,29 @@ import { MODE } from '../../Interface'
 import chatflowService from '../../services/chatflows'
 import { utilBuildChatflow } from '../../utils/buildChatflow'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
+import logger from '../../utils/logger'
 
 // Send input message and get prediction result (Internal)
 const createInternalPrediction = async (req: Request, res: Response, next: NextFunction) => {
     try {
+        const flowId = req.params.id
+        const chatId = req.body?.chatId ?? '(new)'
+        const streaming = req.body?.streaming === true || req.body?.streaming === 'true'
+        logger.info(`[prediction] Internal request flowId=${flowId} chatId=${chatId} streaming=${streaming}`)
+
         const workspaceId = req.user?.activeWorkspaceId
 
-        const chatflow = await chatflowService.getChatflowById(req.params.id, workspaceId)
+        const chatflow = await chatflowService.getChatflowById(flowId, workspaceId)
         if (!chatflow) {
-            throw new InternalFlowiseError(StatusCodes.NOT_FOUND, `Chatflow ${req.params.id} not found`)
+            throw new InternalFlowiseError(StatusCodes.NOT_FOUND, `Chatflow ${flowId} not found`)
         }
 
-        if (req.body.streaming || req.body.streaming === 'true') {
+        if (streaming) {
+            logger.info(`[prediction] Starting stream for flowId=${flowId} chatId=${chatId}`)
             createAndStreamInternalPrediction(req, res, next)
             return
         } else {
+            logger.info(`[prediction] Running non-stream for flowId=${flowId} chatId=${chatId}`)
             const apiResponse = await utilBuildChatflow(req, true)
             if (apiResponse) return res.json(apiResponse)
         }
@@ -33,6 +41,7 @@ const createInternalPrediction = async (req: Request, res: Response, next: NextF
 const createAndStreamInternalPrediction = async (req: Request, res: Response, next: NextFunction) => {
     const chatId = req.body.chatId
     const sseStreamer = getRunningExpressApp().sseStreamer
+    logger.info(`[prediction] SSE client added chatId=${chatId}, building chatflow...`)
 
     try {
         sseStreamer.addClient(chatId, res)
@@ -47,8 +56,10 @@ const createAndStreamInternalPrediction = async (req: Request, res: Response, ne
         }
 
         const apiResponse = await utilBuildChatflow(req, true)
+        logger.info(`[prediction] Stream chatflow finished chatId=${chatId}`)
         sseStreamer.streamMetadataEvent(apiResponse.chatId, apiResponse)
     } catch (error) {
+        logger.error(`[prediction] Stream error chatId=${chatId}: ${getErrorMessage(error)}`)
         if (chatId) {
             sseStreamer.streamErrorEvent(chatId, getErrorMessage(error))
         }

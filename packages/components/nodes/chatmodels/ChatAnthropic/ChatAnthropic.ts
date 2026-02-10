@@ -3,7 +3,7 @@ import { BaseCache } from '@langchain/core/caches'
 import { BaseLLMParams } from '@langchain/core/language_models/llms'
 import { ICommonObject, IMultiModalOption, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
 import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
-import { ChatAnthropic } from './FlowiseChatAnthropic'
+import { ChatAnthropic as FlowiseChatAnthropic } from './FlowiseChatAnthropic'
 import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
 
 class ChatAnthropic_ChatModels implements INode {
@@ -110,7 +110,7 @@ class ChatAnthropic_ChatModels implements INode {
                 name: 'promptCaching',
                 type: 'boolean',
                 description:
-                    'Enable <a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" target="_blank">Anthropic Prompt Caching</a> to reduce costs and latency by caching system prompts and conversation history. Cached input tokens are billed at 10% of base price. Minimum cacheable length varies by model (1024-4096 tokens).',
+                    'Enable <a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" target="_blank">Anthropic Prompt Caching</a> to reduce costs and latency by caching system prompts and conversation history. Cached input tokens are billed at 10% of base price. Minimum cacheable length varies by model (1024-4096 tokens). If your system prompt includes dynamic content (e.g. current date), put a line with exactly "---" (three dashes) between the static part and the dynamic part: only the text before "---" is cached, so the cache can hit.',
                 default: false,
                 optional: true,
                 additionalParams: true
@@ -192,7 +192,8 @@ class ChatAnthropic_ChatModels implements INode {
             }
         }
 
-        const model = new ChatAnthropic(nodeData.id, obj, promptCaching ?? false)
+        const promptCachingEnabled = promptCaching ?? false
+        const model = new FlowiseChatAnthropic(nodeData.id, obj, promptCachingEnabled)
         model.setMultiModalOption(multiModalOption)
         return model
     }
