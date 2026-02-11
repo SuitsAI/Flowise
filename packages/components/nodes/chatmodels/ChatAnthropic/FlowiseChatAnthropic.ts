@@ -10,6 +10,8 @@ const DEFAULT_IMAGE_MAX_TOKEN = 2048
 const CACHE_CONTROL = { type: 'ephemeral' as const, ttl: '1h' as const }
 /** Put this in your system prompt to mark the cache boundary: only the text *before* it is cached. Put dynamic content (e.g. date) *after* it. */
 const CACHE_BOUNDARY_MARKER = '\n---\n'
+/** Anthropic requires non-empty content for all messages (except optional final assistant). Use a single space to avoid 400. */
+const EMPTY_CONTENT_PLACEHOLDER = ' '
 
 export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChatModal {
     configuredModel: string
@@ -147,8 +149,8 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
 
     /**
      * Injects cache_control breakpoints into messages for Anthropic prompt caching.
-     * - System message: cache_control on the *first* content block only, so a stable prefix
-     *   is cached and dynamic content (e.g. current date) in later blocks does not break the cache.
+     * - Normalizes empty message content so Anthropic never receives empty content (avoids 400).
+     * - System message: cache_control on the *first* content block only.
      * - Last message: cache_control on the last block (caches conversation history up to that point).
      */
     private _injectCacheControl(messages: BaseMessage[]): BaseMessage[] {
@@ -162,6 +164,9 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
                 : msg
             return clone as BaseMessage
         })
+
+        // Anthropic: "all messages must have non-empty content except for the optional final assistant message"
+        this._normalizeEmptyContent(cloned)
 
         // 1. System message: cache only the first block so dynamic content (e.g. Date.now()) in later blocks doesn't invalidate the cache
         for (let i = cloned.length - 1; i >= 0; i--) {
@@ -181,6 +186,40 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
     }
 
     /**
+     * Returns true if content is empty or only whitespace (string or block array).
+     * Anthropic returns 400 when a message has empty content (except optional final assistant).
+     */
+    private _isContentEmpty(content: BaseMessage['content']): boolean {
+        if (content === undefined || content === null) return true
+        if (typeof content === 'string') return content.trim().length === 0
+        if (!Array.isArray(content) || content.length === 0) return true
+        return content.every((block: any) => {
+            if (block?.type === 'text' && typeof block.text === 'string') return block.text.trim().length === 0
+            return false
+        })
+    }
+
+    /**
+     * Ensures text is non-empty for API payload. Anthropic rejects empty content blocks.
+     */
+    private _nonEmptyText(text: string): string {
+        return (text ?? '').trim().length > 0 ? text : EMPTY_CONTENT_PLACEHOLDER
+    }
+
+    /**
+     * Normalizes empty message content in place so every message has non-empty content.
+     * Prevents Anthropic 400 "all messages must have non-empty content".
+     */
+    private _normalizeEmptyContent(messages: BaseMessage[]): void {
+        for (const msg of messages) {
+            if (!this._isContentEmpty(msg.content)) continue
+            const role = (msg as any)._getType?.() ?? (msg as any).constructor?.name ?? ''
+            if (role === 'assistant' && msg === messages[messages.length - 1]) continue // optional final assistant may be empty
+            ;(msg as any).content = typeof msg.content === 'string' ? EMPTY_CONTENT_PLACEHOLDER : [{ type: 'text', text: EMPTY_CONTENT_PLACEHOLDER }]
+        }
+    }
+
+    /**
      * Adds cache_control to the stable part of the system message only.
      * - If content is a string containing CACHE_BOUNDARY_MARKER (newline + "---" + newline), we split: only the text *before* the marker gets cache_control; the rest (e.g. dynamic date) is a separate block and does not break the cache.
      * - If content is already multiple blocks, only the first block gets cache_control.
@@ -192,15 +231,17 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
                 const stable = message.content.slice(0, idx).trimEnd()
                 const dynamic = message.content.slice(idx + CACHE_BOUNDARY_MARKER.length).trim()
                 message.content = [
-                    { type: 'text', text: stable, cache_control: CACHE_CONTROL } as MessageContentComplex,
+                    { type: 'text', text: this._nonEmptyText(stable), cache_control: CACHE_CONTROL } as MessageContentComplex,
                     ...(dynamic ? [{ type: 'text', text: dynamic } as MessageContentComplex] : [])
                 ]
             } else {
                 message.content = [
-                    { type: 'text', text: message.content, cache_control: CACHE_CONTROL } as MessageContentComplex
+                    { type: 'text', text: this._nonEmptyText(message.content), cache_control: CACHE_CONTROL } as MessageContentComplex
                 ]
             }
         } else if (Array.isArray(message.content) && message.content.length > 0) {
+            const first = message.content[0] as any
+            if (first?.type === 'text' && typeof first.text === 'string') first.text = this._nonEmptyText(first.text)
             ;(message.content[0] as any).cache_control = CACHE_CONTROL
         }
     }
@@ -209,11 +250,12 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
     private _addCacheControlToLastMessage(message: BaseMessage): void {
         if (typeof message.content === 'string') {
             message.content = [
-                { type: 'text', text: message.content, cache_control: CACHE_CONTROL } as MessageContentComplex
+                { type: 'text', text: this._nonEmptyText(message.content), cache_control: CACHE_CONTROL } as MessageContentComplex
             ]
         } else if (Array.isArray(message.content) && message.content.length > 0) {
-            const lastBlock = message.content[message.content.length - 1]
-            ;(lastBlock as any).cache_control = CACHE_CONTROL
+            const lastBlock = message.content[message.content.length - 1] as any
+            if (lastBlock?.type === 'text' && typeof lastBlock.text === 'string') lastBlock.text = this._nonEmptyText(lastBlock.text)
+            lastBlock.cache_control = CACHE_CONTROL
         }
     }
 
