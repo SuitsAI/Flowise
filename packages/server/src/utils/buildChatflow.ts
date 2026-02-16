@@ -319,6 +319,9 @@ export const executeFlow = async ({
     subscriptionId,
     productId
 }: IExecuteFlowParams) => {
+    const chatflowid = chatflow.id
+    logger.info(`[executeFlow] Start flowId=${chatflowid} chatId=${chatId} type=${chatflow.type}`)
+
     // Ensure incomingInput has all required properties with default values
     incomingInput = {
         history: [],
@@ -332,7 +335,6 @@ export const executeFlow = async ({
     const prependMessages = incomingInput.history ?? []
     const streaming = incomingInput.streaming ?? false
     const userMessageDateTime = new Date()
-    const chatflowid = chatflow.id
 
     /* Process file uploads from the chat
      * - Images
@@ -470,6 +472,7 @@ export const executeFlow = async ({
 
     const isAgentFlowV2 = chatflow.type === 'AGENTFLOW'
     if (isAgentFlowV2) {
+        logger.info(`[executeFlow] Running AGENTFLOW flowId=${chatflowid} chatId=${chatId}`)
         return executeAgentFlow({
             componentNodes,
             incomingInput,
@@ -495,6 +498,7 @@ export const executeFlow = async ({
     }
 
     /*** Get chatflows and prepare data  ***/
+    logger.info(`[executeFlow] Running graph-based flow flowId=${chatflowid} chatId=${chatId}`)
     const flowData = chatflow.flowData
     const parsedFlowData: IReactFlowObject = JSON.parse(flowData)
     const nodes = parsedFlowData.nodes
@@ -973,6 +977,9 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
     const appServer = getRunningExpressApp()
 
     const chatflowid = req.params.id
+    logger.info(
+        `[chatflow] Building flow id=${chatflowid} chatId=${req.body?.chatId ?? req.body?.overrideConfig?.sessionId ?? '(new)'} isInternal=${isInternal}`
+    )
 
     // Check if chatflow exists
     const chatflow = await appServer.AppDataSource.getRepository(ChatFlow).findOneBy({
@@ -983,6 +990,8 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
     }
 
     const isAgentFlow = chatflow.type === 'MULTIAGENT'
+    const isAgentFlowV2 = chatflow.type === 'AGENTFLOW'
+    logger.info(`[chatflow] Flow type=${chatflow.type} (agentFlow=${isAgentFlow} agentFlowV2=${isAgentFlowV2})`)
     const httpProtocol = req.get('x-forwarded-proto') || req.protocol
     const baseURL = `${httpProtocol}://${req.get('host')}`
     const incomingInput: IncomingInput = req.body || {} // Ensure incomingInput is never undefined
@@ -1082,7 +1091,9 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
             appServer.abortControllerPool.add(abortControllerId, signal)
             executeData.signal = signal
 
+            logger.info(`[chatflow] Executing flow id=${chatflowid} chatId=${chatId}`)
             const result = await executeFlow(executeData)
+            logger.info(`[chatflow] Flow completed id=${chatflowid} chatId=${chatId}`)
 
             appServer.abortControllerPool.remove(abortControllerId)
             await updatePredictionsUsage(orgId, subscriptionId, workspaceId, appServer.usageCacheManager)
