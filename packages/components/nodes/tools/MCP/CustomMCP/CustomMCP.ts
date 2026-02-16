@@ -93,7 +93,8 @@ class Custom_MCP implements INode {
     loadMethods = {
         listActions: async (nodeData: INodeData, options: ICommonObject): Promise<INodeOptionsValue[]> => {
             try {
-                const toolset = await this.getTools(nodeData, options)
+                // Bypass cache when listing actions so "Refresh" and dropdown always show current MCP tools
+                const toolset = await this.getTools(nodeData, options, { skipCache: true })
                 toolset.sort((a: any, b: any) => a.name.localeCompare(b.name))
 
                 return toolset.map(({ name, ...rest }) => ({
@@ -130,7 +131,7 @@ class Custom_MCP implements INode {
         return tools.filter((tool: any) => mcpActions.includes(tool.name))
     }
 
-    async getTools(nodeData: INodeData, options: ICommonObject): Promise<Tool[]> {
+    async getTools(nodeData: INodeData, options: ICommonObject, getToolsOptions?: { skipCache?: boolean }): Promise<Tool[]> {
         const mcpServerConfig = nodeData.inputs?.mcpServerConfig as string
         if (!mcpServerConfig) {
             throw new Error('MCP Server Config is required')
@@ -156,8 +157,9 @@ class Custom_MCP implements INode {
         }
 
         const cacheKey = hash({ workspaceId, canonicalConfig, sandbox })
+        const useCache = !getToolsOptions?.skipCache
 
-        if (options.cachePool) {
+        if (useCache && options.cachePool) {
             const cachedResult = await options.cachePool.getMCPCache(cacheKey)
             if (cachedResult) {
                 return cachedResult.tools

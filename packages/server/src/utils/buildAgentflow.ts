@@ -1496,11 +1496,11 @@ export const executeAgentFlow = async ({
     subscriptionId,
     productId
 }: IExecuteAgentFlowParams) => {
-    logger.debug('\n🚀 Starting flow execution')
+    const overrideConfig = incomingInput.overrideConfig ?? {}
+    logger.info(`[agentflow] Starting execution flowId=${chatflow.id} chatId=${chatId} sessionId=${overrideConfig?.sessionId ?? chatId}`)
 
     const question = incomingInput.question
     const form = incomingInput.form
-    let overrideConfig = incomingInput.overrideConfig ?? {}
     const uploads = incomingInput.uploads
     const userMessageDateTime = new Date()
     const chatflowid = chatflow.id
