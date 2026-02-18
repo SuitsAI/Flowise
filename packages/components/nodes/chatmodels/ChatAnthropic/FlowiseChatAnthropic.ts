@@ -45,6 +45,34 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
         }
     }
 
+    /**
+     * Override invocationParams to sanitize Langchain's sentinel defaults before sending to the API.
+     *
+     * Langchain's ChatAnthropic defaults topP and topK to -1 as "unset" sentinels, but the
+     * Anthropic API rejects -1 on newer models (e.g. claude-sonnet-4-6). Additionally, some
+     * models reject requests where both temperature and top_p are present simultaneously.
+     *
+     * Rules applied here:
+     *  - Strip top_p / top_k when they are -1 (Langchain's unset sentinel).
+     *  - If a valid top_p (0–1) is being sent, also strip temperature (mutually exclusive on newer models).
+     */
+    // @ts-ignore – return type intentionally widened; base class uses a complex intersection type that varies across langchain versions
+    invocationParams(options?: this['ParsedCallOptions']): Record<string, unknown> {
+        const params = super.invocationParams(options) as Record<string, unknown>
+
+        const topP = params['top_p']
+        const topK = params['top_k']
+
+        // Remove sentinel -1 values that Langchain uses to mean "not set"
+        if (topP === -1 || topP === undefined) delete params['top_p']
+        if (topK === -1 || topK === undefined) delete params['top_k']
+
+        // If a valid top_p is being sent, temperature must be omitted (mutually exclusive on newer models)
+        if (typeof params['top_p'] === 'number') delete params['temperature']
+
+        return params
+    }
+
     async _generate(
         messages: BaseMessage[],
         options: this['ParsedCallOptions'],
