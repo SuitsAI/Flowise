@@ -83,14 +83,21 @@ class ChatAnthropic_LlamaIndex_ChatModels implements INode {
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const anthropicApiKey = getCredentialParam('anthropicApiKey', credentialData, nodeData)
 
+        // Anthropic API: top_p must be between 0 and 1; -1 is invalid for some models (e.g. claude-sonnet-4-6).
+        // Also, temperature and top_p cannot both be specified on certain models — top_p takes precedence.
+        const topPNum = topP ? parseFloat(topP) : NaN
+        const topPValid = Number.isFinite(topPNum) && topPNum >= 0 && topPNum <= 1
+
         const obj: Partial<Anthropic> = {
-            temperature: parseFloat(temperature),
             model: modelName,
             apiKey: anthropicApiKey
         }
 
+        // Only set temperature when top_p is not being used (the two are mutually exclusive on some models)
+        if (!topPValid) obj.temperature = parseFloat(temperature)
+
         if (maxTokensToSample) obj.maxTokens = parseInt(maxTokensToSample, 10)
-        if (topP) obj.topP = parseFloat(topP)
+        if (topPValid) obj.topP = topPNum
 
         const model = new Anthropic(obj)
         return model

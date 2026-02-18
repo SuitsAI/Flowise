@@ -160,12 +160,19 @@ class ChatAnthropic_ChatModels implements INode {
 
         const allowImageUploads = nodeData.inputs?.allowImageUploads as boolean
 
+        // Anthropic API: top_p must be between 0 and 1; -1 is invalid for some models (e.g. claude-sonnet-4-6).
+        // Also, temperature and top_p cannot both be specified on certain models — top_p takes precedence.
+        const topPNum = topP ? parseFloat(topP) : NaN
+        const topPValid = Number.isFinite(topPNum) && topPNum >= 0 && topPNum <= 1
+
         const obj: Partial<AnthropicInput> & BaseLLMParams & { anthropicApiKey?: string } = {
-            temperature: parseFloat(temperature),
             modelName,
             anthropicApiKey,
             streaming: streaming ?? true
         }
+
+        // Only set temperature when top_p is not being used (the two are mutually exclusive on some models)
+        if (!topPValid) obj.temperature = parseFloat(temperature)
 
         if (beta) obj.clientOptions = {
             defaultHeaders: {
@@ -173,9 +180,8 @@ class ChatAnthropic_ChatModels implements INode {
             }
         }
 
-        
         if (maxTokens) obj.maxTokens = parseInt(maxTokens, 10)
-        if (topP) obj.topP = parseFloat(topP)
+        if (topPValid) obj.topP = topPNum
         if (topK) obj.topK = parseFloat(topK)
         if (cache) obj.cache = cache
         if (extendedThinking) {
