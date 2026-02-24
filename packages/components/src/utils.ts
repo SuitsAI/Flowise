@@ -7,9 +7,9 @@ import { z } from 'zod'
 import { cloneDeep, omit, get } from 'lodash'
 import TurndownService from 'turndown'
 import { DataSource, Equal } from 'typeorm'
-import { ICommonObject, IDatabaseEntity, IFileUpload, IMessage, INodeData, IVariable, MessageContentImageUrl } from './Interface'
+import { ICommonObject, IDatabaseEntity, IFileUpload, IMessage, INodeData, IUsedTool, IVariable, MessageContentImageUrl } from './Interface'
 import { AES, enc } from 'crypto-js'
-import { AIMessage, HumanMessage, BaseMessage } from '@langchain/core/messages'
+import { AIMessage, HumanMessage, BaseMessage, ToolMessage } from '@langchain/core/messages'
 import { Document } from '@langchain/core/documents'
 import { getFileFromStorage } from './storageUtils'
 import { GetSecretValueCommand, SecretsManagerClient, SecretsManagerClientConfig } from '@aws-sdk/client-secrets-manager'
@@ -717,6 +717,41 @@ export const mapChatMessageToBaseMessage = async (chatmessages: any[] = [], orgI
 
     for (const message of chatmessages) {
         if (message.role === 'apiMessage' || message.type === 'apiMessage') {
+            let usedTools: IUsedTool[] = []
+            try {
+                if (message.usedTools && typeof message.usedTools === 'string') {
+                    usedTools = JSON.parse(message.usedTools) as IUsedTool[]
+                }
+            } catch {
+                // ignore invalid usedTools JSON
+            }
+            if (Array.isArray(usedTools) && usedTools.length > 0) {
+                // Reconstruct tool-calling turn so the agent sees past tool use in history:
+                // AIMessage (with tool_calls) -> ToolMessage per tool -> AIMessage (final content)
+                const toolCalls = usedTools.map((t, i) => ({
+                    id: `call_${i}`,
+                    name: t.tool,
+                    args: t.toolInput ?? {}
+                }))
+                chatHistory.push(
+                    new AIMessage({
+                        content: '',
+                        tool_calls: toolCalls
+                    })
+                )
+                for (let i = 0; i < usedTools.length; i++) {
+                    const t = usedTools[i]
+                    const output =
+                        typeof t.toolOutput === 'string' ? t.toolOutput : JSON.stringify(t.toolOutput ?? '')
+                    chatHistory.push(
+                        new ToolMessage({
+                            tool_call_id: `call_${i}`,
+                            content: output,
+                            name: t.tool
+                        })
+                    )
+                }
+            }
             chatHistory.push(new AIMessage(message.content || ''))
         } else if (message.role === 'userMessage' || message.type === 'userMessage') {
             // check for image/files uploads

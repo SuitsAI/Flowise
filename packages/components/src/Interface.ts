@@ -182,6 +182,8 @@ export interface IUsedTool {
     toolOutput: string | object
     sourceDocuments?: ICommonObject[]
     error?: string
+    /** When true, this tool call is included when saving to chat memory (e.g. Custom Tool "Save to Memory" option) */
+    saveToMemory?: boolean
 }
 
 export interface IMultiAgentNode {
