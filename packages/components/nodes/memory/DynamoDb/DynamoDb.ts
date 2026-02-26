@@ -271,7 +271,7 @@ class BufferMemoryExtended extends FlowiseMemory implements MemoryMethods {
         return returnBaseMessages ? baseMessages : convertBaseMessagetoIMessage(baseMessages)
     }
 
-    async addChatMessages(msgArray: { text: string; type: MessageType }[], overrideSessionId = ''): Promise<void> {
+    async addChatMessages(msgArray: import('../../../src/Interface').ChatMessageInput[], overrideSessionId = ''): Promise<void> {
         if (!this.dynamodbClient) return
 
         const dynamoKey = overrideSessionId ? this.overrideDynamoKey(overrideSessionId) : this.dynamoKey

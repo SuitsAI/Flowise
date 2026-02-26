@@ -359,7 +359,7 @@ class Mem0MemoryExtended extends BaseMem0Memory implements MemoryMethods {
         return returnIMessages
     }
 
-    async addChatMessages(msgArray: { text: string; type: MessageType }[], overrideUserId = ''): Promise<void> {
+    async addChatMessages(msgArray: import('../../../src/Interface').ChatMessageInput[], overrideUserId = ''): Promise<void> {
         const effectiveUserId = this.getEffectiveUserId(overrideUserId)
         const input = msgArray.find((msg) => msg.type === 'userMessage')
         const output = msgArray.find((msg) => msg.type === 'apiMessage')

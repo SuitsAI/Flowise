@@ -247,21 +247,22 @@ class ToolAgent_Agents implements INode {
             }
         }
 
-        if (memory && typeof memory.addChatMessages === 'function') {
-            await memory.addChatMessages(
-                [
-                    {
-                        text: input,
-                        type: 'userMessage'
-                    },
-                    {
-                        text: outputForHistory,
-                        type: 'apiMessage'
-                    }
-                ],
-                this.sessionId
-            )
-        }
+        const usedToolsToSave = (usedTools || []).filter((t: IUsedTool) => t.saveToMemory === true)
+        await memory.addChatMessages(
+            [
+                {
+                    text: input,
+                    type: 'userMessage'
+                },
+                {
+                    text: outputForHistory,
+                    type: 'apiMessage',
+                    ...(usedToolsToSave.length > 0 && { usedTools: usedToolsToSave })
+                }
+            ],
+            this.sessionId
+        )
+        
 
         let finalRes = output
 
@@ -291,11 +292,7 @@ const prepareAgent = async (
     const model = nodeData.inputs?.model as BaseChatModel
     const maxIterations = nodeData.inputs?.maxIterations as string
     const memory = nodeData.inputs?.memory as FlowiseMemory
-    if (!memory || typeof memory.getChatMessages !== 'function') {
-        throw new Error(
-            'Tool Agent requires a memory node that supports getChatMessages (e.g. Buffer Memory, Buffer Window Memory). Please connect a compatible Flowise memory.'
-        )
-    }
+    
     let systemMessage = nodeData.inputs?.systemMessage as string
     let tools = nodeData.inputs?.tools
     tools = flatten(tools)
