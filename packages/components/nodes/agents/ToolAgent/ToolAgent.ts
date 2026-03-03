@@ -255,7 +255,7 @@ class ToolAgent_Agents implements INode {
                     type: 'userMessage'
                 },
                 {
-                    text: outputForHistory,
+                    text: outputForHistory || "[NO DATA]",
                     type: 'apiMessage',
                     ...(usedToolsToSave.length > 0 && { usedTools: usedToolsToSave })
                 }
