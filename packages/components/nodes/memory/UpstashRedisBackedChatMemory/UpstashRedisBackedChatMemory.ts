@@ -170,7 +170,9 @@ class BufferMemoryExtended extends FlowiseMemory implements MemoryMethods {
         if (output) {
             const usedTools = output.usedTools && output.usedTools.length > 0 ? output.usedTools : []
             const messagesToStore = buildToolCallMessagesForMemory(output.text, usedTools)
-            for (let i = messagesToStore.length - 1; i >= 0; i--) {
+            // Push in chronological order (tool_calls, then tool responses, then final content) so that
+            // after lpush the list is [content, ...toolMsgs, aiToolCalls, ...] and reverse() gives correct order
+            for (let i = 0; i < messagesToStore.length; i++) {
                 await this.redisClient.lpush(id, JSON.stringify(messagesToStore[i].toDict()))
             }
             if (this.sessionTTL) await this.redisClient.expire(id, this.sessionTTL)
