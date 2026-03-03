@@ -2205,7 +2205,8 @@ export const executeAgentFlow = async ({
         executionId: newExecution.id
     }
     if (lastNodeOutput?.sourceDocuments) apiMessage.sourceDocuments = JSON.stringify(lastNodeOutput.sourceDocuments)
-    if (lastNodeOutput?.usedTools) apiMessage.usedTools = JSON.stringify(lastNodeOutput.usedTools)
+    const usedToolsToSave = (lastNodeOutput?.usedTools || []).filter((t: any) => t.saveToMemory === true)
+    if (usedToolsToSave?.length) apiMessage.usedTools = JSON.stringify(usedToolsToSave)
     if (lastNodeOutput?.fileAnnotations) apiMessage.fileAnnotations = JSON.stringify(lastNodeOutput.fileAnnotations)
     if (lastNodeOutput?.artifacts) apiMessage.artifacts = JSON.stringify(lastNodeOutput.artifacts)
     if (chatflow.followUpPrompts) {

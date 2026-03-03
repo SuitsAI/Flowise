@@ -7,7 +7,8 @@ import {
     getCredentialData,
     getCredentialParam,
     getVersion,
-    mapChatMessageToBaseMessage
+    mapChatMessageToBaseMessage,
+    buildToolCallMessagesForMemory
 } from '../../../src/utils'
 import { FlowiseMemory, ICommonObject, IMessage, INode, INodeData, INodeParams, MemoryMethods, MessageType } from '../../../src/Interface'
 
@@ -151,7 +152,7 @@ class BufferMemoryExtended extends FlowiseMemory implements MemoryMethods {
         return returnBaseMessages ? baseMessages : convertBaseMessagetoIMessage(baseMessages)
     }
 
-    async addChatMessages(msgArray: { text: string; type: MessageType }[], overrideSessionId = ''): Promise<void> {
+    async addChatMessages(msgArray: import('../../../src/Interface').ChatMessageInput[], overrideSessionId = ''): Promise<void> {
         const client = new MongoClient(this.mongoConnection.mongoDBConnectUrl, { driverInfo: this.mongoConnection.driverInfo })
         const collection = client.db(this.mongoConnection.databaseName).collection(this.mongoConnection.collectionName)
 
@@ -175,8 +176,9 @@ class BufferMemoryExtended extends FlowiseMemory implements MemoryMethods {
         }
 
         if (output) {
-            const newOutputMessage = new AIMessage(output.text)
-            const messageToAdd = [newOutputMessage].map((msg) => ({
+            const usedTools = output.usedTools && output.usedTools.length > 0 ? output.usedTools : []
+            const messagesToStore = buildToolCallMessagesForMemory(output.text, usedTools)
+            const messageToAdd = messagesToStore.map((msg) => ({
                 ...msg.toDict(),
                 timestamp: new Date() // Add timestamp to the message
             }))

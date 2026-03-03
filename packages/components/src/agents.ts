@@ -507,7 +507,8 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
                             usedTools.push({
                                 tool: tool.name,
                                 toolInput: toolInput ?? (action.toolInput as any),
-                                toolOutput
+                                toolOutput,
+                                saveToMemory: (tool as any)?.flowiseSaveToMemory === true
                             })
                         } else {
                             observation = `${action.tool} is not a valid tool, try another one.`
@@ -528,7 +529,8 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
                                 tool: tool.name,
                                 toolInput: action.toolInput as any,
                                 toolOutput: '',
-                                error: getErrorMessage(e)
+                                error: getErrorMessage(e),
+                                saveToMemory: (tool as any)?.flowiseSaveToMemory === true
                             })
                             return { action, observation: observation ?? '' }
                         } else {
@@ -536,7 +538,8 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
                                 tool: tool.name,
                                 toolInput: action.toolInput as any,
                                 toolOutput: '',
-                                error: getErrorMessage(e)
+                                error: getErrorMessage(e),
+                                saveToMemory: (tool as any)?.flowiseSaveToMemory === true
                             })
                             return { action, observation: getErrorMessage(e) }
                         }

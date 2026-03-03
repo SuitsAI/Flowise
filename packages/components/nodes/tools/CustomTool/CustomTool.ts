@@ -39,6 +39,14 @@ class CustomTool_Tools implements INode {
                 optional: true
             },
             {
+                label: 'Save to Memory',
+                name: 'saveToMemory',
+                description: 'When enabled, this tool\'s input and output are stored in chat memory (only for tools with this option enabled)',
+                type: 'boolean',
+                default: false,
+                optional: true
+            },
+            {
                 label: 'Custom Tool Name',
                 name: 'customToolName',
                 type: 'string',
@@ -100,6 +108,7 @@ class CustomTool_Tools implements INode {
         const customToolDesc = nodeData.inputs?.customToolDesc as string
         const customToolSchema = nodeData.inputs?.customToolSchema as string
         const customToolReturnDirect = nodeData.inputs?.returnDirect as boolean
+        const saveToMemory = nodeData.inputs?.saveToMemory as boolean
 
         const appDataSource = options.appDataSource as DataSource
         const databaseEntities = options.databaseEntities as IDatabaseEntity
@@ -131,6 +140,7 @@ class CustomTool_Tools implements INode {
             dynamicStructuredTool.setVariables(variables)
             dynamicStructuredTool.setFlowObject(flow)
             dynamicStructuredTool.returnDirect = customToolReturnDirect
+            ;(dynamicStructuredTool as any).flowiseSaveToMemory = saveToMemory === true
 
             return dynamicStructuredTool
         } catch (e) {

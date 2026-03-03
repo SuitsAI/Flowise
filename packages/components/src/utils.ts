@@ -7,9 +7,9 @@ import { z } from 'zod'
 import { cloneDeep, omit, get } from 'lodash'
 import TurndownService from 'turndown'
 import { DataSource, Equal } from 'typeorm'
-import { ICommonObject, IDatabaseEntity, IFileUpload, IMessage, INodeData, IVariable, MessageContentImageUrl } from './Interface'
+import { ICommonObject, IDatabaseEntity, IFileUpload, IMessage, INodeData, IUsedTool, IVariable, MessageContentImageUrl } from './Interface'
 import { AES, enc } from 'crypto-js'
-import { AIMessage, HumanMessage, BaseMessage } from '@langchain/core/messages'
+import { AIMessage, HumanMessage, BaseMessage, ToolMessage } from '@langchain/core/messages'
 import { Document } from '@langchain/core/documents'
 import { getFileFromStorage } from './storageUtils'
 import { GetSecretValueCommand, SecretsManagerClient, SecretsManagerClientConfig } from '@aws-sdk/client-secrets-manager'
@@ -20,6 +20,7 @@ import { NodeVM } from '@flowiseai/nodevm'
 import { Sandbox } from '@e2b/code-interpreter'
 import { secureFetch, checkDenyList, secureAxiosRequest } from './httpSecurity'
 import JSON5 from 'json5'
+import { v4 as uuidv4 } from 'uuid'
 
 export const numberOrExpressionRegex = '^(\\d+\\.?\\d*|{{.*}})$' //return true if string consists only numbers OR expression {{}}
 export const notEmptyRegex = '(.|\\s)*\\S(.|\\s)*' //return true if string is not empty or blank
@@ -708,6 +709,37 @@ export const getUserHome = (): string => {
 }
 
 /**
+ * Build the sequence of BaseMessages for one assistant turn that had tool calls (for storing in memory).
+ * Returns [AIMessage(tool_calls), ToolMessage, ..., ToolMessage, AIMessage(content)].
+ * @param content Final assistant text
+ * @param usedTools Tools used in this turn (will be stored and later expanded in history)
+ * @returns BaseMessage[] to serialize and store
+ */
+export const buildToolCallMessagesForMemory = (content: string, usedTools: IUsedTool[]): BaseMessage[] => {
+    if (!Array.isArray(usedTools) || usedTools.length === 0) {
+        return [new AIMessage(content || '')]
+    }
+    const callIds = usedTools.map(() => `call_${uuidv4()}`)
+    const toolCalls = usedTools.map((t, i) => ({
+        id: callIds[i],
+        name: t.tool,
+        args: t.toolInput ?? {}
+    }))
+    const messages: BaseMessage[] = [
+        new AIMessage({ content: '', tool_calls: toolCalls }),
+        ...usedTools.map((t, i) =>
+            new ToolMessage({
+                tool_call_id: callIds[i],
+                content: typeof t.toolOutput === 'string' ? t.toolOutput : JSON.stringify(t.toolOutput ?? ''),
+                name: t.tool
+            })
+        ),
+        new AIMessage(content || '')
+    ]
+    return messages
+}
+
+/**
  * Map ChatMessage to BaseMessage
  * @param {IChatMessage[]} chatmessages
  * @returns {BaseMessage[]}
@@ -717,6 +749,42 @@ export const mapChatMessageToBaseMessage = async (chatmessages: any[] = [], orgI
 
     for (const message of chatmessages) {
         if (message.role === 'apiMessage' || message.type === 'apiMessage') {
+            let usedTools: IUsedTool[] = []
+            try {
+                if (message.usedTools && typeof message.usedTools === 'string') {
+                    usedTools = JSON.parse(message.usedTools) as IUsedTool[]
+                }
+            } catch {
+                // ignore invalid usedTools JSON
+            }
+            if (Array.isArray(usedTools) && usedTools.length > 0) {
+                // Reconstruct tool-calling turn so the agent sees past tool use in history:
+                // AIMessage (with tool_calls) -> ToolMessage per tool -> AIMessage (final content)
+                const callIds = usedTools.map(() => `call_${uuidv4()}`)
+                const toolCalls = usedTools.map((t, i) => ({
+                    id: callIds[i],
+                    name: t.tool,
+                    args: t.toolInput ?? {}
+                }))
+                chatHistory.push(
+                    new AIMessage({
+                        content: '',
+                        tool_calls: toolCalls
+                    })
+                )
+                for (let i = 0; i < usedTools.length; i++) {
+                    const t = usedTools[i]
+                    const output =
+                        typeof t.toolOutput === 'string' ? t.toolOutput : JSON.stringify(t.toolOutput ?? '')
+                    chatHistory.push(
+                        new ToolMessage({
+                            tool_call_id: callIds[i],
+                            content: output,
+                            name: t.tool
+                        })
+                    )
+                }
+            }
             chatHistory.push(new AIMessage(message.content || ''))
         } else if (message.role === 'userMessage' || message.type === 'userMessage') {
             // check for image/files uploads

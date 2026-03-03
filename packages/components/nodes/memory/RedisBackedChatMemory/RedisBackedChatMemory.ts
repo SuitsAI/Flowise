@@ -7,7 +7,8 @@ import {
     getBaseClasses,
     getCredentialData,
     getCredentialParam,
-    mapChatMessageToBaseMessage
+    mapChatMessageToBaseMessage,
+    buildToolCallMessagesForMemory
 } from '../../../src/utils'
 
 class RedisBackedChatMemory_Memory implements INode {
@@ -176,7 +177,7 @@ class BufferMemoryExtended extends FlowiseMemory implements MemoryMethods {
         })
     }
 
-    async addChatMessages(msgArray: { text: string; type: MessageType }[], overrideSessionId = ''): Promise<void> {
+    async addChatMessages(msgArray: import('../../../src/Interface').ChatMessageInput[], overrideSessionId = ''): Promise<void> {
         await this.withRedisClient(async (client) => {
             const id = overrideSessionId ? overrideSessionId : this.sessionId
             const input = msgArray.find((msg) => msg.type === 'userMessage')
@@ -190,9 +191,11 @@ class BufferMemoryExtended extends FlowiseMemory implements MemoryMethods {
             }
 
             if (output) {
-                const newOutputMessage = new AIMessage(output.text)
-                const messageToAdd = [newOutputMessage].map((msg) => msg.toDict())
-                await client.lpush(id, JSON.stringify(messageToAdd[0]))
+                const usedTools = output.usedTools && output.usedTools.length > 0 ? output.usedTools : []
+                const messagesToStore = buildToolCallMessagesForMemory(output.text, usedTools)
+                for (let i = messagesToStore.length - 1; i >= 0; i--) {
+                    await client.lpush(id, JSON.stringify(messagesToStore[i].toDict()))
+                }
                 if (this.sessionTTL) await client.expire(id, this.sessionTTL)
             }
         })

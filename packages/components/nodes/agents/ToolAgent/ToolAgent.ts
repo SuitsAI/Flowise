@@ -247,6 +247,7 @@ class ToolAgent_Agents implements INode {
             }
         }
 
+        const usedToolsToSave = (usedTools || []).filter((t: IUsedTool) => t.saveToMemory === true)
         await memory.addChatMessages(
             [
                 {
@@ -254,12 +255,14 @@ class ToolAgent_Agents implements INode {
                     type: 'userMessage'
                 },
                 {
-                    text: outputForHistory,
-                    type: 'apiMessage'
+                    text: outputForHistory || "[NO DATA]",
+                    type: 'apiMessage',
+                    ...(usedToolsToSave.length > 0 && { usedTools: usedToolsToSave })
                 }
             ],
             this.sessionId
         )
+        
 
         let finalRes = output
 
@@ -289,6 +292,7 @@ const prepareAgent = async (
     const model = nodeData.inputs?.model as BaseChatModel
     const maxIterations = nodeData.inputs?.maxIterations as string
     const memory = nodeData.inputs?.memory as FlowiseMemory
+    
     let systemMessage = nodeData.inputs?.systemMessage as string
     let tools = nodeData.inputs?.tools
     tools = flatten(tools)

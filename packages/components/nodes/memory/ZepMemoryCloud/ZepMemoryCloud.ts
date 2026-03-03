@@ -179,7 +179,7 @@ class ZepMemoryExtended extends ZepMemory implements MemoryMethods {
         return returnBaseMessages ? baseMessages : convertBaseMessagetoIMessage(baseMessages)
     }
 
-    async addChatMessages(msgArray: { text: string; type: MessageType }[], overrideSessionId = ''): Promise<void> {
+    async addChatMessages(msgArray: import('../../../src/Interface').ChatMessageInput[], overrideSessionId = ''): Promise<void> {
         const id = overrideSessionId ? overrideSessionId : this.sessionId
         const input = msgArray.find((msg) => msg.type === 'userMessage')
         const output = msgArray.find((msg) => msg.type === 'apiMessage')

@@ -650,7 +650,8 @@ export const executeFlow = async ({
 
             if (sourceDocuments?.length) apiMessage.sourceDocuments = JSON.stringify(sourceDocuments)
             if (artifacts?.length) apiMessage.artifacts = JSON.stringify(artifacts)
-            if (usedTools?.length) apiMessage.usedTools = JSON.stringify(usedTools)
+            const usedToolsToSave = (usedTools || []).filter((t: any) => t.saveToMemory === true)
+            if (usedToolsToSave?.length) apiMessage.usedTools = JSON.stringify(usedToolsToSave)
             if (agentReasoning?.length) apiMessage.agentReasoning = JSON.stringify(agentReasoning)
             if (finalAction && Object.keys(finalAction).length) apiMessage.action = JSON.stringify(finalAction)
 
@@ -856,7 +857,8 @@ export const executeFlow = async ({
             sessionId
         }
         if (result?.sourceDocuments) apiMessage.sourceDocuments = JSON.stringify(result.sourceDocuments)
-        if (result?.usedTools) apiMessage.usedTools = JSON.stringify(result.usedTools)
+        const usedToolsToSave = (result?.usedTools || []).filter((t: any) => t.saveToMemory === true)
+        if (usedToolsToSave?.length) apiMessage.usedTools = JSON.stringify(usedToolsToSave)
         if (result?.fileAnnotations) apiMessage.fileAnnotations = JSON.stringify(result.fileAnnotations)
         if (result?.artifacts) apiMessage.artifacts = JSON.stringify(result.artifacts)
         if (chatflow.followUpPrompts) {
