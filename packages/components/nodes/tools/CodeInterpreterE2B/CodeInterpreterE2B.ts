@@ -15,8 +15,33 @@ Script should be pure python code that can be evaluated. \
 It should be in python format NOT markdown. \
 The code should NOT be wrapped in backticks. \
 All python packages including requests, matplotlib, scipy, numpy, pandas, \
-etc are available. Create and display chart using "plt.show()".`
+etc are available. Create and display chart using "plt.show()". \
+Save generated files (e.g. plots, CSVs) to the /generated directory so they can be returned as artifacts.`
 const NAME = 'code_interpreter'
+
+const GENERATED_DIR = '/generated'
+
+const EXT_TO_MIME: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.csv': 'text/csv',
+    '.json': 'application/json',
+    '.html': 'text/html',
+    '.htm': 'text/html',
+    '.txt': 'text/plain',
+    '.pdf': 'application/pdf',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.xls': 'application/vnd.ms-excel'
+}
+
+function getMimeFromPath(filePath: string): string {
+    const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase()
+    return EXT_TO_MIME[ext] ?? 'application/octet-stream'
+}
 
 class Code_Interpreter_Tools implements INode {
     label: string
@@ -88,6 +113,7 @@ class Code_Interpreter_Tools implements INode {
             name: toolName ?? NAME,
             apiKey: e2bApiKey,
             schema: z.object({
+                command: z.string().describe('Command to be executed in the sandbox environment before executing the input code'),
                 input: z.string().describe('Python code to be executed in the sandbox environment')
             }),
             chatflowid: options.chatflowid,
@@ -230,8 +256,15 @@ export class E2BTool extends StructuredTool {
                     this.instance = await Sandbox.create({ apiKey: this.apiKey })
                 }
                 
+                // Ensure /generated exists so code can save files there
+                await this.instance.files.makeDir(GENERATED_DIR).catch(() => {})
+
+                if (arg?.command) {
+                    await this.instance.commands.run(arg?.command);
+                }
+
                 const execution = await this.instance.runCode(arg?.input, { language: 'python' })
-                
+
                 const artifacts = []
                 for (const result of execution.results) {
                     for (const key in result) {
@@ -274,6 +307,38 @@ export class E2BTool extends StructuredTool {
                             artifacts.push({ type: key, data: (result as any)[key] })
                         } //TODO: support for pdf
                     }
+                }
+
+                // Download all files from /generated folder and add as artifacts (ignore files without extension)
+                try {
+                    const entries = await this.instance.files.list(GENERATED_DIR, { depth: 100 })
+                    const fileEntries = entries.filter((e) => {
+                        if (e.type !== 'file') return false
+                        const name = e.name
+                        const lastDot = name.lastIndexOf('.')
+                        return lastDot > 0 && lastDot < name.length - 1
+                    })
+                    for (const entry of fileEntries) {
+                        try {
+                            const content = await this.instance.files.read(entry.path, { format: 'bytes' })
+                            const buffer = Buffer.from(content as Uint8Array)
+                            const fileName = entry.name
+                            const mime = getMimeFromPath(entry.path)
+                            const { path: storagePath } = await addSingleFileToStorage(
+                                mime,
+                                buffer,
+                                fileName,
+                                this.orgId,
+                                this.chatflowid,
+                                flowConfig!.chatId as string
+                            )
+                            artifacts.push({ type: 'file', data: storagePath })
+                        } catch (readErr) {
+                            // Skip single file read errors (e.g. permission, deleted)
+                        }
+                    }
+                } catch {
+                    // /generated may not exist or list may fail; skip filesystem artifacts
                 }
 
                 // this.instance.close()
