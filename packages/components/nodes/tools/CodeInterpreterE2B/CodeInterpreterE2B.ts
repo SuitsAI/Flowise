@@ -113,7 +113,7 @@ class Code_Interpreter_Tools implements INode {
             name: toolName ?? NAME,
             apiKey: e2bApiKey,
             schema: z.object({
-                command: z.string().describe('Command to be executed in the sandbox environment before executing the input code'),
+                command: z.string().describe('Command to be executed in the sandbox environment before executing the input code (to install packages, etc)'),
                 input: z.string().describe('Python code to be executed in the sandbox environment')
             }),
             chatflowid: options.chatflowid,
