@@ -136,10 +136,10 @@ class ToolAgent_Agents implements INode {
         const shouldStreamResponse = options.shouldStreamResponse
         const sseStreamer: IServerSideEventStreamer = options.sseStreamer as IServerSideEventStreamer
         const chatId = options.chatId
-        const vars = options.vars as ICommonObject | undefined
-        const conversationId = (vars?.conversationId as string | undefined) ?? (options.conversationId as string | undefined) ?? this.sessionId ?? options.chatId
-        const userId = (vars?.userId as string | undefined) ?? (options.userId as string | undefined)
-        const orgId = (vars?.orgId as string | undefined) ?? (options.orgId as string | undefined)
+        const orgId = options.userOrgId
+        const userId = options.userId
+        const conversationId = options.conversationId || this.sessionId || options.chatId
+        const sessionId = this.sessionId || options.chatId
 
         if (moderations && moderations.length > 0) {
             try {
@@ -185,7 +185,8 @@ class ToolAgent_Agents implements INode {
                 metadata: {
                     conversationId,
                     userId,
-                    orgId
+                    orgId,
+                    sessionId
                 }
             }
             res = await executor.invoke({ input }, invokeConfig)
@@ -231,7 +232,8 @@ class ToolAgent_Agents implements INode {
                 metadata: {
                     conversationId,
                     userId,
-                    orgId
+                    orgId,
+                    sessionId
                 }
             }
             res = await executor.invoke({ input }, invokeConfig)
