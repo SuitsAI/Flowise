@@ -176,7 +176,13 @@ class ToolAgent_Agents implements INode {
                 allCallbacks.push(customStreamingHandler)
             }
 
-            res = await executor.invoke({ input }, { callbacks: allCallbacks })
+            const invokeConfig: ICommonObject = {
+                callbacks: allCallbacks,
+                metadata: {
+                    conversationId: this.sessionId ?? options.chatId
+                }
+            }
+            res = await executor.invoke({ input }, invokeConfig)
             if (res.sourceDocuments) {
                 if (sseStreamer) {
                     sseStreamer.streamSourceDocumentsEvent(chatId, flatten(res.sourceDocuments))
@@ -214,7 +220,13 @@ class ToolAgent_Agents implements INode {
                 allCallbacks.push(customStreamingHandler)
             }
 
-            res = await executor.invoke({ input }, { callbacks: allCallbacks })
+            const invokeConfig: ICommonObject = {
+                callbacks: allCallbacks,
+                metadata: {
+                    conversationId: this.sessionId ?? options.chatId
+                }
+            }
+            res = await executor.invoke({ input }, invokeConfig)
             if (res.sourceDocuments) {
                 sourceDocuments = res.sourceDocuments
             }
