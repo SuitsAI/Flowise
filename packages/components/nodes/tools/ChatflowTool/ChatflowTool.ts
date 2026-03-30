@@ -365,7 +365,15 @@ try {
     const resp = await response.json();
     let result = resp.text || '';
     if (resp.artifacts && Array.isArray(resp.artifacts) && resp.artifacts.length > 0) {
-        result += ${JSON.stringify(ARTIFACTS_PREFIX)} + JSON.stringify(resp.artifacts);
+        const artifactsWithUrls = resp.artifacts.map(function(artifact) {
+            if (artifact && artifact.data) {
+                const mainPath = "${this.baseURL}/api/v1/get-upload-file?chatflowId=${this.chatflowid}&chatId=" + resp.chatId + "&fileName=";
+                const fileUrl = artifact.data.replace('FILE-STORAGE::', mainPath);
+                return Object.assign({}, artifact, { data: fileUrl });
+            }
+            return artifact;
+        });
+        result += ${JSON.stringify(ARTIFACTS_PREFIX)} + JSON.stringify(artifactsWithUrls);
     }
     return result;
 } catch (error) {
