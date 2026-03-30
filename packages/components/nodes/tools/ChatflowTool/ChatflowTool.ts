@@ -13,6 +13,7 @@ import {
 } from '../../../src/utils'
 import { isValidUUID, isValidURL } from '../../../src/validator'
 import { v4 as uuidv4 } from 'uuid'
+import { ARTIFACTS_PREFIX } from '../../../src/agents'
 
 class ChatflowTool_Tools implements INode {
     label: string
@@ -364,19 +365,7 @@ try {
     const resp = await response.json();
     let result = resp.text || '';
     if (resp.artifacts && Array.isArray(resp.artifacts) && resp.artifacts.length > 0) {
-        const artifactLinks = resp.artifacts
-            .map(function(artifact) {
-                if (artifact && artifact.data) {
-                    const fileUrl = "${this.baseURL}/api/v1/get-upload-file?chatflowId=${this.chatflowid}&chatId=" + resp.chatId + "&fileName=" + artifact.data.replace('FILE-STORAGE::', '');
-                    return '\\n![](' + fileUrl + ')';
-                }
-                return null;
-            })
-            .filter(Boolean)
-            .join('\\n');
-        if (artifactLinks) {
-            result += '\\n\\n' + artifactLinks;
-        }
+        result += ${JSON.stringify(ARTIFACTS_PREFIX)} + JSON.stringify(resp.artifacts);
     }
     return result;
 } catch (error) {
