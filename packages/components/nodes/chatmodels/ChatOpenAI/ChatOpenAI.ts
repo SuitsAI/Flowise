@@ -188,10 +188,15 @@ class ChatOpenAI_ChatModels implements INode {
             },
             {
                 label: 'Reasoning Effort',
-                description: 'Constrains effort on reasoning for reasoning models',
+                description:
+                    'Controls how many reasoning tokens the model generates before responding. Starting with GPT-5.2, "none" is the lowest setting and the default — providing lower latency. Increase to "medium" or "high" for more thorough reasoning. For older models (o1/o3), only low/medium/high are supported.',
                 name: 'reasoningEffort',
                 type: 'options',
                 options: [
+                    {
+                        label: 'None (default for GPT-5.2+)',
+                        name: 'none'
+                    },
                     {
                         label: 'Low',
                         name: 'low'
@@ -233,6 +238,29 @@ class ChatOpenAI_ChatModels implements INode {
                 show: {
                     reasoning: true
                 }
+            },
+            {
+                label: 'Verbosity',
+                description:
+                    'Controls how many output tokens are generated. "High" is best for thorough explanations or extensive code refactoring. "Low" is best for concise answers or simple code generation. "Medium" is the default for GPT-5.4+. Only applicable for GPT-5+ models.',
+                name: 'verbosity',
+                type: 'options',
+                options: [
+                    {
+                        label: 'Low',
+                        name: 'low'
+                    },
+                    {
+                        label: 'Medium (default)',
+                        name: 'medium'
+                    },
+                    {
+                        label: 'High',
+                        name: 'high'
+                    }
+                ],
+                optional: true,
+                additionalParams: true
             }
         ]
     }
@@ -260,6 +288,7 @@ class ChatOpenAI_ChatModels implements INode {
         const baseOptions = nodeData.inputs?.baseOptions
         const reasoningEffort = nodeData.inputs?.reasoningEffort as OpenAIClient.ReasoningEffort | null
         const reasoningSummary = nodeData.inputs?.reasoningSummary as 'auto' | 'concise' | 'detailed' | null
+        const verbosity = nodeData.inputs?.verbosity as 'low' | 'medium' | 'high' | null
 
         const allowImageUploads = nodeData.inputs?.allowImageUploads as boolean
         const imageResolution = nodeData.inputs?.imageResolution as string
@@ -303,6 +332,13 @@ class ChatOpenAI_ChatModels implements INode {
                 reasoning.summary = reasoningSummary
             }
             obj.reasoning = reasoning
+        }
+
+        if (modelName.includes('gpt-5') && verbosity) {
+            obj.modelKwargs = {
+                ...obj.modelKwargs,
+                text: { verbosity }
+            }
         }
 
         let parsedBaseOptions: any | undefined = undefined

@@ -136,6 +136,10 @@ class ToolAgent_Agents implements INode {
         const shouldStreamResponse = options.shouldStreamResponse
         const sseStreamer: IServerSideEventStreamer = options.sseStreamer as IServerSideEventStreamer
         const chatId = options.chatId
+        const orgId = options.userOrgId
+        const userId = options.userId
+        const conversationId = options.conversationId || this.sessionId || options.chatId
+        const sessionId = this.sessionId || options.chatId
 
         if (moderations && moderations.length > 0) {
             try {
@@ -176,7 +180,16 @@ class ToolAgent_Agents implements INode {
                 allCallbacks.push(customStreamingHandler)
             }
 
-            res = await executor.invoke({ input }, { callbacks: allCallbacks })
+            const invokeConfig: ICommonObject = {
+                callbacks: allCallbacks,
+                metadata: {
+                    conversationId,
+                    userId,
+                    orgId,
+                    sessionId
+                }
+            }
+            res = await executor.invoke({ input }, invokeConfig)
             if (res.sourceDocuments) {
                 if (sseStreamer) {
                     sseStreamer.streamSourceDocumentsEvent(chatId, flatten(res.sourceDocuments))
@@ -214,7 +227,16 @@ class ToolAgent_Agents implements INode {
                 allCallbacks.push(customStreamingHandler)
             }
 
-            res = await executor.invoke({ input }, { callbacks: allCallbacks })
+            const invokeConfig: ICommonObject = {
+                callbacks: allCallbacks,
+                metadata: {
+                    conversationId,
+                    userId,
+                    orgId,
+                    sessionId
+                }
+            }
+            res = await executor.invoke({ input }, invokeConfig)
             if (res.sourceDocuments) {
                 sourceDocuments = res.sourceDocuments
             }

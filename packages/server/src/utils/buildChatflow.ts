@@ -776,7 +776,10 @@ export const executeFlow = async ({
             ...(isStreamValid && { sseStreamer, shouldStreamResponse: isStreamValid }),
             evaluationRunId,
             updateStorageUsage,
-            checkStorage
+            checkStorage,
+            userOrgId: overrideConfig?.vars?.orgId,
+            userId: overrideConfig?.vars?.userId,
+            conversationId: overrideConfig?.vars?.conversationId
         }
 
         /*** Run the ending node ***/

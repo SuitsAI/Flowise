@@ -651,7 +651,12 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
 
     const updateLastMessageArtifacts = (artifacts) => {
         artifacts.forEach((artifact) => {
-            if (artifact.type === 'png' || artifact.type === 'jpeg') {
+            if (
+               // (artifact.type === 'png' || artifact.type === 'jpeg' || artifact.type === 'file') &&
+                typeof artifact.data === 'string' &&
+                artifact.data.startsWith('FILE-STORAGE::')
+            ) 
+            {
                 artifact.data = `${baseURL}/api/v1/get-upload-file?chatflowId=${chatflowid}&chatId=${chatId}&fileName=${artifact.data.replace(
                     'FILE-STORAGE::',
                     ''
@@ -1262,7 +1267,11 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                 if (message.artifacts) {
                     obj.artifacts = message.artifacts
                     obj.artifacts.forEach((artifact) => {
-                        if (artifact.type === 'png' || artifact.type === 'jpeg') {
+                        if (
+                            (artifact.type === 'png' || artifact.type === 'jpeg' || artifact.type === 'file') &&
+                            typeof artifact.data === 'string' &&
+                            artifact.data.startsWith('FILE-STORAGE::')
+                        ) {
                             artifact.data = `${baseURL}/api/v1/get-upload-file?chatflowId=${chatflowid}&chatId=${chatId}&fileName=${artifact.data.replace(
                                 'FILE-STORAGE::',
                                 ''
@@ -2199,7 +2208,12 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         const newArtifacts = cloneDeep(artifacts)
         for (let i = 0; i < newArtifacts.length; i++) {
             const artifact = newArtifacts[i]
-            if (artifact && (artifact.type === 'png' || artifact.type === 'jpeg')) {
+            if (
+                artifact &&
+                (artifact.type === 'png' || artifact.type === 'jpeg' || artifact.type === 'file') &&
+                typeof artifact.data === 'string' &&
+                artifact.data.startsWith('FILE-STORAGE::')
+            ) {
                 const data = artifact.data
                 newArtifacts[i].data = `${baseURL}/api/v1/get-upload-file?chatflowId=${chatflowid}&chatId=${chatId}&fileName=${data.replace(
                     'FILE-STORAGE::',
@@ -2241,6 +2255,14 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                 <div style={{ marginTop: '20px' }}>
                     <SafeHTML html={item.data} />
                 </div>
+            )
+        } else if (item.type === 'file' && item.data) {
+            return (
+                <Card key={index} sx={{ p: 1.5, m: 0, mt: 2, mb: 2, flex: '0 0 auto' }}>
+                    <a href={item.data} target='_blank' rel='noopener noreferrer' style={{ wordBreak: 'break-all' }}>
+                        {item.data.startsWith('http') ? 'Download file' : item.data}
+                    </a>
+                </Card>
             )
         } else {
             return (
