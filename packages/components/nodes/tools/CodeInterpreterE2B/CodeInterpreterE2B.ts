@@ -251,7 +251,7 @@ export class E2BTool extends StructuredTool {
                 // this.instance = await CodeInterpreter.create({ apiKey: this.apiKey })
                 // const execution = await this.instance.notebook.execCell(arg?.input)
 
-                if (this.sandboxId) {
+                if (this.sandboxId && this.sandboxId !== ' ') {
                     // Connect to an existing sandbox if sandboxId is provided
                     this.instance = await Sandbox.connect(this.sandboxId, { apiKey: this.apiKey })
                 } else {
