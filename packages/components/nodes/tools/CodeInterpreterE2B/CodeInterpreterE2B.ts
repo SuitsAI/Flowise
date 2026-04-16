@@ -116,8 +116,8 @@ class Code_Interpreter_Tools implements INode {
                 command: z
                     .string()
                     .optional()
-                    .describe('Command to be executed in the sandbox environment before executing the input code (to install packages, etc)'),
-                input: z.string().describe('Python code to be executed in the sandbox environment')
+                    .describe('Command to be executed in the sandbox environment before executing the code (to install packages, etc)'),
+                code: z.string().describe('Python code to be executed in the sandbox environment')
             }),
             chatflowid: options.chatflowid,
             sandboxId: sandboxId,
@@ -247,7 +247,7 @@ export class E2BTool extends StructuredTool {
     ): Promise<string> {
         flowConfig = { ...this.flowObj, ...flowConfig }
         try {
-            if ('input' in arg) {
+            if ('code' in arg) {
                 // this.instance = await CodeInterpreter.create({ apiKey: this.apiKey })
                 // const execution = await this.instance.notebook.execCell(arg?.input)
 
@@ -266,7 +266,7 @@ export class E2BTool extends StructuredTool {
                     await this.instance.commands.run(arg?.command);
                 }
 
-                const execution = await this.instance.runCode(arg?.input, { language: 'python' })
+                const execution = await this.instance.runCode(arg?.code, { language: 'python' })
 
                 const artifacts = []
                 for (const result of execution.results) {
