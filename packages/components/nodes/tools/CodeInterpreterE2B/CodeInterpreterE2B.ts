@@ -113,12 +113,36 @@ class Code_Interpreter_Tools implements INode {
             name: toolName ?? NAME,
             apiKey: e2bApiKey,
             schema: z.object({
+                code: z
+                  .string()
+                  .min(1, "Code must not be empty")
+                  .describe(
+                    [
+                      "Complete, self-contained Python code to execute in the persistent sandbox.",
+                      "Rules:",
+                      "- Always send the FULL script, not diffs or fragments (sandbox is stateful across calls)",
+                      "- Use print() for all outputs you want to see",
+                      "- Save any files (plots, CSVs, etc.) to /generated/ directory",
+                      "- Use plt.show() to render charts",
+                      "- Do NOT wrap code in markdown backticks or add any prose",
+                      "- Never leave this field empty — if there is nothing to run, do not call this tool"
+                    ].join("\n")
+                  ),
+              
                 command: z
-                    .string()
-                    .optional()
-                    .describe('Command to be executed in the sandbox environment before executing the code (to install packages, etc)'),
-                code: z.string().describe('Python code to be executed in the sandbox environment')
-            }),
+                  .string()
+                  .min(1)
+                  .regex(/^[a-zA-Z0-9 _.=<>!@#$%^&*()\-\[\]\/\\|;:'"`,~+]+$/, "Must be a valid shell command")
+                  .optional()
+                  .describe(
+                    [
+                      "Optional shell command to run BEFORE the Python code (e.g. to install packages).",
+                      "Examples: 'pip install pyarrow', 'apt-get install -y libgdal-dev'",
+                      "Only provide when a package or system dependency is needed that is not pre-installed.",
+                      "Do NOT use for Python logic — that belongs in `code`."
+                    ].join("\n")
+                  ),
+              }),
             chatflowid: options.chatflowid,
             sandboxId: sandboxId,
             orgId: options.orgId
