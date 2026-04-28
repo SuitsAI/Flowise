@@ -69,6 +69,18 @@ export class SSEStreamer implements IServerSideEventStreamer {
         }
     }
 
+    streamLLMReasoningEvent(chatId: string, data: string) {
+        const client = this.clients[chatId]
+        if (client) {
+            console.log('streamLLMReasoningEvent', data)
+            const clientResponse = {
+                event: 'llmReasoning',
+                data: data
+            }
+            client.response.write('message:\ndata:' + JSON.stringify(clientResponse) + '\n\n')
+        }
+    }
+
     streamSourceDocumentsEvent(chatId: string, data: any) {
         const client = this.clients[chatId]
         if (client) {

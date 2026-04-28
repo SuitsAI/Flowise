@@ -125,6 +125,21 @@ export class RedisEventPublisher implements IServerSideEventStreamer {
         }
     }
 
+    streamLLMReasoningEvent(chatId: string, data: string) {
+        try {
+            this.redisPublisher.publish(
+                chatId,
+                JSON.stringify({
+                    chatId,
+                    eventType: 'llmReasoning',
+                    data
+                })
+            )
+        } catch (error) {
+            console.error('Error streaming llmReasoning event:', error)
+        }
+    }
+
     streamSourceDocumentsEvent(chatId: string, data: any) {
         try {
             this.redisPublisher.publish(

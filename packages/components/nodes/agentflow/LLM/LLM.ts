@@ -1,6 +1,6 @@
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { ICommonObject, IMessage, INode, INodeData, INodeOptionsValue, INodeParams, IServerSideEventStreamer } from '../../../src/Interface'
-import { AIMessageChunk, BaseMessageLike, MessageContentText } from '@langchain/core/messages'
+import { AIMessageChunk, BaseMessageLike } from '@langchain/core/messages'
 import { DEFAULT_SUMMARIZER_TEMPLATE } from '../prompt'
 import { z } from 'zod'
 import { AnalyticHandler } from '../../../src/handler'
@@ -13,6 +13,7 @@ import {
     updateFlowState
 } from '../utils'
 import { processTemplateVariables } from '../../../src/utils'
+import { extractLLMStreamDeltas, getAnswerTextFromMessageContent } from '../../../src/streamingReasoning'
 import { flatten } from 'lodash'
 
 class LLM_Agentflow implements INode {
@@ -481,7 +482,7 @@ class LLM_Agentflow implements INode {
                     const sseStreamer: IServerSideEventStreamer = options.sseStreamer as IServerSideEventStreamer
                     let finalResponse = ''
                     if (response.content && Array.isArray(response.content)) {
-                        finalResponse = response.content.map((item: any) => item.text).join('\n')
+                        finalResponse = getAnswerTextFromMessageContent(response.content)
                     } else if (response.content && typeof response.content === 'string') {
                         finalResponse = response.content
                     } else {
@@ -511,7 +512,7 @@ class LLM_Agentflow implements INode {
             // Prepare final response and output object
             let finalResponse = ''
             if (response.content && Array.isArray(response.content)) {
-                finalResponse = response.content.map((item: any) => item.text).join('\n')
+                finalResponse = getAnswerTextFromMessageContent(response.content)
             } else if (response.content && typeof response.content === 'string') {
                 finalResponse = response.content
             } else {
@@ -823,14 +824,13 @@ class LLM_Agentflow implements INode {
         try {
             for await (const chunk of await llmNodeInstance.stream(messages, { signal: abortController?.signal })) {
                 if (sseStreamer) {
-                    let content = ''
-                    if (Array.isArray(chunk.content) && chunk.content.length > 0) {
-                        const contents = chunk.content as MessageContentText[]
-                        content = contents.map((item) => item.text).join('')
-                    } else {
-                        content = chunk.content.toString()
+                    const { reasoningDelta, textDelta } = extractLLMStreamDeltas(chunk, '')
+                    if (reasoningDelta) {
+                        sseStreamer.streamLLMReasoningEvent(chatId, reasoningDelta)
                     }
-                    sseStreamer.streamTokenEvent(chatId, content)
+                    if (textDelta) {
+                        sseStreamer.streamTokenEvent(chatId, textDelta)
+                    }
                 }
 
                 response = response.concat(chunk)
@@ -840,8 +840,7 @@ class LLM_Agentflow implements INode {
             throw error
         }
         if (Array.isArray(response.content) && response.content.length > 0) {
-            const responseContents = response.content as MessageContentText[]
-            response.content = responseContents.map((item) => item.text).join('')
+            response.content = getAnswerTextFromMessageContent(response.content)
         }
         return response
     }

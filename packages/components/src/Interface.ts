@@ -431,6 +431,7 @@ export * from './Interface.Evaluation'
 export interface IServerSideEventStreamer {
     streamStartEvent(chatId: string, data: any): void
     streamTokenEvent(chatId: string, data: string): void
+    streamLLMReasoningEvent(chatId: string, data: string): void
     streamCustomEvent(chatId: string, eventType: string, data: any): void
     streamSourceDocumentsEvent(chatId: string, data: any): void
     streamUsedToolsEvent(chatId: string, data: any): void

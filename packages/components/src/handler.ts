@@ -29,6 +29,7 @@ import { getCredentialData, getCredentialParam, getEnvironmentVariable } from '.
 import { EvaluationRunTracer } from '../evaluation/EvaluationRunTracer'
 import { EvaluationRunTracerLlama } from '../evaluation/EvaluationRunTracerLlama'
 import { ICommonObject, IDatabaseEntity, INodeData, IServerSideEventStreamer } from './Interface'
+import { extractLLMStreamDeltas } from './streamingReasoning'
 import { LangWatch, LangWatchSpan, LangWatchTrace, autoconvertTypedValues } from 'langwatch'
 import { DataSource } from 'typeorm'
 import { ChatGenerationChunk } from '@langchain/core/outputs'
@@ -372,22 +373,30 @@ export class CustomChainHandler extends BaseCallbackHandler {
         fields?: HandleLLMNewTokenCallbackFields
     ): void | Promise<void> {
         if (this.skipK === 0) {
+            const chunk = fields?.chunk as ChatGenerationChunk
+            const message = chunk?.message as AIMessageChunk
+            const toolCalls = message?.tool_call_chunks || []
+            if (toolCalls.length > 0) {
+                return
+            }
+
+            const { reasoningDelta, textDelta } = extractLLMStreamDeltas(message, token)
+            if (!reasoningDelta && !textDelta) {
+                return
+            }
+
             if (!this.isLLMStarted) {
                 this.isLLMStarted = true
                 if (this.sseStreamer) {
-                    this.sseStreamer.streamStartEvent(this.chatId, token)
+                    this.sseStreamer.streamStartEvent(this.chatId, textDelta || reasoningDelta || '')
                 }
             }
             if (this.sseStreamer) {
-                if (token) {
-                    const chunk = fields?.chunk as ChatGenerationChunk
-                    const message = chunk?.message as AIMessageChunk
-                    const toolCalls = message?.tool_call_chunks || []
-
-                    // Only stream when token is not empty and not a tool call
-                    if (toolCalls.length === 0) {
-                        this.sseStreamer.streamTokenEvent(this.chatId, token)
-                    }
+                if (reasoningDelta) {
+                    this.sseStreamer.streamLLMReasoningEvent(this.chatId, reasoningDelta)
+                }
+                if (textDelta) {
+                    this.sseStreamer.streamTokenEvent(this.chatId, textDelta)
                 }
             }
         }

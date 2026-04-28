@@ -179,7 +179,8 @@ class ChatOpenAI_ChatModels implements INode {
             },
             {
                 label: 'Reasoning',
-                description: 'Whether the model supports reasoning. Only applicable for reasoning models.',
+                description:
+                    'Turn on to stream model reasoning separately from answer tokens (SSE event name: llmReasoning). Only applicable to reasoning-capable models.',
                 name: 'reasoning',
                 type: 'boolean',
                 default: false,
@@ -217,7 +218,7 @@ class ChatOpenAI_ChatModels implements INode {
             },
             {
                 label: 'Reasoning Summary',
-                description: `A summary of the reasoning performed by the model. This can be useful for debugging and understanding the model's reasoning process`,
+                description: `Controls OpenAI reasoning summary output. When available, Flowise streams it in llmReasoning SSE events.`,
                 name: 'reasoningSummary',
                 type: 'options',
                 options: [

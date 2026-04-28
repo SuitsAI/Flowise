@@ -112,6 +112,9 @@ export class RedisEventSubscriber {
             case 'token':
                 this.sseStreamer.streamTokenEvent(chatId, data)
                 break
+            case 'llmReasoning':
+                this.sseStreamer.streamLLMReasoningEvent(chatId, data)
+                break
             case 'sourceDocuments':
                 this.sseStreamer.streamSourceDocumentsEvent(chatId, data)
                 break
