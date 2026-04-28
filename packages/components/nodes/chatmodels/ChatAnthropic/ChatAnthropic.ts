@@ -226,7 +226,7 @@ class ChatAnthropic_ChatModels implements INode {
                 edit.trigger = { type: 'input_tokens', value: parseInt(compactionTriggerTokens, 10) }
             }
             if (compactionInstructions) edit.instructions = compactionInstructions
-            obj.contextManagement = { edits: [edit] } as AnthropicInput['contextManagement']
+            obj.contextManagement = { edits: [edit] } as unknown as AnthropicInput['contextManagement']
         }
 
         const multiModalOption: IMultiModalOption = {
