@@ -5,6 +5,7 @@ const envPath = path.join(__dirname, '..', '..', '.env')
 dotenv.config({ path: envPath, override: true })
 
 export * from './Interface'
+export * from './streamingReasoning'
 export * from './utils'
 export * from './speechToText'
 export * from './textToSpeech'

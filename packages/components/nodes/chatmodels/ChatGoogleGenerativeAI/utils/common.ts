@@ -64,6 +64,25 @@ function extractThoughtSignature(part: Part): string | undefined {
 }
 
 /**
+ * Gemini thinking models can mark text parts with `thought: true`.
+ * Keep those separate from answer text so downstream SSE can emit `llmReasoning`.
+ */
+function mapTextPart(text: string | undefined, part: Part): { type: 'text' | 'thinking'; text?: string; thinking?: string } {
+    const isThought = !!(part as { thought?: boolean }).thought
+    const safeText = text ?? ''
+    if (isThought) {
+        return {
+            type: 'thinking',
+            thinking: safeText
+        }
+    }
+    return {
+        type: 'text',
+        text: safeText
+    }
+}
+
+/**
  * Creates a Part with thought signature if provided.
  * According to the SDK type definitions, FunctionCallPart has thoughtSignature?: string directly on it.
  * The Gemini API only accepts thoughtSignature directly on the part, NOT in extra_content.
@@ -613,10 +632,7 @@ export function mapGenerateContentResultToChatResult(
                 lastPartThoughtSignature = extractThoughtSignature(p)
             }
             if ('text' in p) {
-                return {
-                    type: 'text',
-                    text: p.text
-                }
+                return mapTextPart(p.text, p)
             } else if ('executableCode' in p) {
                 return {
                     type: 'executableCode',
@@ -776,7 +792,11 @@ export async function convertResponseContentToChatGenerationChunk(
     let lastPartThoughtSignature: string | undefined
     
     // Checks if some parts do not have text. If false, it means that the content is a string.
-    if (Array.isArray(candidateContent?.parts) && candidateContent.parts.every((p: Part) => 'text' in p)) {
+    if (
+        Array.isArray(candidateContent?.parts) &&
+        candidateContent.parts.every((p: Part) => 'text' in p) &&
+        candidateContent.parts.every((p: Part) => !(p as { thought?: boolean }).thought)
+    ) {
         content = candidateContent.parts.map((p: Part) => p.text).join('')
         // Check last part for thought signature
         if (candidateContent.parts.length > 0) {
@@ -810,10 +830,7 @@ export async function convertResponseContentToChatGenerationChunk(
                 lastPartThoughtSignature = extractThoughtSignature(p)
             }
             if ('text' in p) {
-                content.push({
-                    type: 'text',
-                    text: p.text
-                })
+                content.push(mapTextPart(p.text, p))
             } else if ('executableCode' in p) {
                 content.push({
                     type: 'executableCode',

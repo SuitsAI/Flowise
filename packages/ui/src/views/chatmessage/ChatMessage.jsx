@@ -7,6 +7,9 @@ import { v4 as uuidv4 } from 'uuid'
 import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source'
 
 import {
+    Accordion,
+    AccordionDetails,
+    AccordionSummary,
     Box,
     Button,
     Card,
@@ -25,6 +28,7 @@ import {
     DialogActions,
     TextField
 } from '@mui/material'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { darken, useTheme } from '@mui/material/styles'
 import {
     IconCircleDot,
@@ -618,6 +622,18 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         })
     }
 
+    const updateLastMessageLlmReasoning = (delta) => {
+        if (delta == null || delta === '') return
+        const piece = typeof delta === 'string' ? delta : String(delta)
+        setMessages((prevMessages) => {
+            let allMessages = [...cloneDeep(prevMessages)]
+            if (allMessages[allMessages.length - 1].type === 'userMessage') return allMessages
+            const prev = allMessages[allMessages.length - 1].llmReasoning || ''
+            allMessages[allMessages.length - 1].llmReasoning = prev + piece
+            return allMessages
+        })
+    }
+
     const updateAgentFlowEvent = (event) => {
         if (event === 'INPROGRESS') {
             setMessages((prevMessages) => [...prevMessages, { message: '', type: 'apiMessage', agentFlowEventStatus: event }])
@@ -1098,6 +1114,9 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                         break
                     case 'agentReasoning':
                         updateLastMessageAgentReasoning(payload.data)
+                        break
+                    case 'llmReasoning':
+                        updateLastMessageLlmReasoning(payload.data)
                         break
                     case 'agentFlowEvent':
                         updateAgentFlowEvent(payload.data)
@@ -2583,6 +2602,42 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                                                     return item !== null ? <>{renderArtifacts(item, index)}</> : null
                                                 })}
                                             </div>
+                                        )}
+                                        {message.llmReasoning && message.llmReasoning.length > 0 && (
+                                            <Accordion
+                                                disableGutters
+                                                elevation={0}
+                                                sx={{
+                                                    width: '100%',
+                                                    mb: 1,
+                                                    '&:before': { display: 'none' },
+                                                    bgcolor: customization.isDarkMode ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                                                    borderRadius: 1,
+                                                    border: 1,
+                                                    borderColor: 'divider'
+                                                }}
+                                            >
+                                                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                                    <Stack direction='row' spacing={1} alignItems='center'>
+                                                        <IconSparkles size={18} />
+                                                        <Typography variant='subtitle2'>Model reasoning</Typography>
+                                                    </Stack>
+                                                </AccordionSummary>
+                                                <AccordionDetails>
+                                                    <Typography
+                                                        component='pre'
+                                                        sx={{
+                                                            whiteSpace: 'pre-wrap',
+                                                            fontFamily: 'monospace',
+                                                            fontSize: '0.8rem',
+                                                            m: 0,
+                                                            wordBreak: 'break-word'
+                                                        }}
+                                                    >
+                                                        {message.llmReasoning}
+                                                    </Typography>
+                                                </AccordionDetails>
+                                            </Accordion>
                                         )}
                                         <div className='markdownanswer'>
                                             {message.type === 'leadCaptureMessage' &&

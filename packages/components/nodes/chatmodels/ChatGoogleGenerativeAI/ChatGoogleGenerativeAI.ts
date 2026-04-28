@@ -178,7 +178,8 @@ class GoogleGenerativeAI_ChatModels implements INode {
                 label: 'Thinking Budget',
                 name: 'thinkingBudget',
                 type: 'number',
-                description: 'Guides the number of thinking tokens. -1 for dynamic, 0 to disable, or positive integer (Gemini 2.5 models).',
+                description:
+                    'Turn on Gemini thinking (2.5 models) to stream internal reasoning separately as llmReasoning SSE events. Use -1 for dynamic budget, 0 to disable, or a positive integer.',
                 step: 1,
                 optional: true,
                 additionalParams: true,

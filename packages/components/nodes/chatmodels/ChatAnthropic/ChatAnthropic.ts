@@ -91,7 +91,8 @@ class ChatAnthropic_ChatModels implements INode {
                 label: 'Extended Thinking',
                 name: 'extendedThinking',
                 type: 'boolean',
-                description: 'Enable extended thinking for reasoning model such as Claude Sonnet 3.7 and Claude 4',
+                description:
+                    'Turn on to stream Claude internal thinking separately from the answer (SSE event name: llmReasoning). Supported on Sonnet 3.7+, Claude 4 / Sonnet 4.x, etc. If off, you only get normal answer tokens.',
                 optional: true,
                 additionalParams: true
             },
