@@ -234,6 +234,7 @@ class AzureChatOpenAI_ChatModels implements INode {
         const topP = nodeData.inputs?.topP as string
         const basePath = nodeData.inputs?.basepath as string
         const baseOptions = nodeData.inputs?.baseOptions
+        const reasoningEnabled = nodeData.inputs?.reasoning === true
         const reasoningEffort = nodeData.inputs?.reasoningEffort as OpenAIClient.Chat.ChatCompletionReasoningEffort | null
         const reasoningSummary = nodeData.inputs?.reasoningSummary as 'auto' | 'concise' | 'detailed' | null
 
@@ -283,7 +284,12 @@ class AzureChatOpenAI_ChatModels implements INode {
             if (reasoningSummary) {
                 reasoning.summary = reasoningSummary
             }
-            obj.reasoning = reasoning
+            if (reasoningEnabled && Object.keys(reasoning).length === 0) {
+                reasoning.summary = 'auto'
+            }
+            if (Object.keys(reasoning).length > 0) {
+                obj.reasoning = reasoning
+            }
 
             if (maxTokens) {
                 delete obj.maxTokens

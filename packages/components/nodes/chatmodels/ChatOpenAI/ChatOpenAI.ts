@@ -287,6 +287,7 @@ class ChatOpenAI_ChatModels implements INode {
         const basePath = nodeData.inputs?.basepath as string
         const proxyUrl = nodeData.inputs?.proxyUrl as string
         const baseOptions = nodeData.inputs?.baseOptions
+        const reasoningEnabled = nodeData.inputs?.reasoning === true
         const reasoningEffort = nodeData.inputs?.reasoningEffort as OpenAIClient.ReasoningEffort | null
         const reasoningSummary = nodeData.inputs?.reasoningSummary as 'auto' | 'concise' | 'detailed' | null
         const verbosity = nodeData.inputs?.verbosity as 'low' | 'medium' | 'high' | null
@@ -332,7 +333,13 @@ class ChatOpenAI_ChatModels implements INode {
             if (reasoningSummary) {
                 reasoning.summary = reasoningSummary
             }
-            obj.reasoning = reasoning
+            // UI toggle alone should still request reasoning summary streams when sub-fields were left default-empty.
+            if (reasoningEnabled && Object.keys(reasoning).length === 0) {
+                reasoning.summary = 'auto'
+            }
+            if (Object.keys(reasoning).length > 0) {
+                obj.reasoning = reasoning
+            }
         }
 
         if (modelName.includes('gpt-5') && verbosity) {
