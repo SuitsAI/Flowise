@@ -179,13 +179,10 @@ class GoogleGenerativeAI_ChatModels implements INode {
                 name: 'thinkingBudget',
                 type: 'number',
                 description:
-                    'Turn on Gemini thinking (2.5 models) to stream internal reasoning separately as llmReasoning SSE events. Use -1 for dynamic budget, 0 to disable, or a positive integer.',
+                    'For Gemini 2.5+ thinking models: sets thinking budget and requests thought summaries in the API (`includeThoughts`). Use -1 for dynamic budget, 0 to disable, or a positive integer. Required for `llmReasoning` SSE — ensure Google returns thought parts, not only a budget.',
                 step: 1,
                 optional: true,
-                additionalParams: true,
-                show: {
-                    modelName: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
-                }
+                additionalParams: true
             },
             {
                 label: 'Base URL',
@@ -261,7 +258,9 @@ class GoogleGenerativeAI_ChatModels implements INode {
         if (temperature) obj.temperature = parseFloat(temperature)
         if (baseUrl) obj.baseUrl = baseUrl
         if (aspectRatio) obj.aspectRatio = aspectRatio
-        if (thinkingBudget) obj.thinkingBudget = parseInt(thinkingBudget, 10)
+        if (thinkingBudget !== undefined && thinkingBudget !== null && String(thinkingBudget).trim() !== '') {
+            obj.thinkingBudget = parseInt(String(thinkingBudget), 10)
+        }
 
         let safetySettings: SafetySetting[] = []
         if (_safetySettings) {

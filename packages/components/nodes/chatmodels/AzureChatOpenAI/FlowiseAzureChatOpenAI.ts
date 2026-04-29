@@ -1,6 +1,10 @@
 import { AzureChatOpenAI as LangchainAzureChatOpenAI, OpenAIChatInput, AzureOpenAIInput, ClientOptions } from '@langchain/openai'
+import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager'
+import type { BaseMessage } from '@langchain/core/messages'
+import type { ChatGenerationChunk } from '@langchain/core/outputs'
 import { IMultiModalOption, IVisionChatModal } from '../../../src'
 import { BaseChatModelParams } from '@langchain/core/language_models/chat_models'
+import { flowiseMergeOpenAIReasoningParams, patchInnerOpenAIReasoningDelegates } from '../ChatOpenAI/flowiseOpenAIReasoning'
 
 export class AzureChatOpenAI extends LangchainAzureChatOpenAI implements IVisionChatModal {
     configuredModel: string
@@ -22,6 +26,7 @@ export class AzureChatOpenAI extends LangchainAzureChatOpenAI implements IVision
             }
     ) {
         super(fields)
+        patchInnerOpenAIReasoningDelegates(this)
         this.id = id
         this.configuredModel = fields?.modelName ?? ''
         this.configuredMaxToken = fields?.maxTokens
@@ -42,5 +47,37 @@ export class AzureChatOpenAI extends LangchainAzureChatOpenAI implements IVision
 
     addBuiltInTools(builtInTool: Record<string, any>): void {
         this.builtInTools.push(builtInTool)
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _getReasoningParams(options?: any) {
+        return flowiseMergeOpenAIReasoningParams(this, options)
+    }
+
+    /** Same as Flowise ChatOpenAI: Responses API stream must forward handleLLMNewToken for SSE. */
+    async *_streamResponseChunks(
+        messages: BaseMessage[],
+        options: Parameters<LangchainAzureChatOpenAI['_streamResponseChunks']>[1],
+        runManager?: CallbackManagerForLLMRun
+    ): AsyncGenerator<ChatGenerationChunk> {
+        const combinedOptions = (this as unknown as { _combineCallOptions: (o: typeof options) => typeof options })._combineCallOptions(
+            options
+        )
+        const self = this as unknown as {
+            _useResponsesApi: (opts: typeof combinedOptions) => boolean
+            responses: { _streamResponseChunks: typeof LangchainAzureChatOpenAI.prototype._streamResponseChunks }
+        }
+        if (self._useResponsesApi(combinedOptions)) {
+            for await (const chunk of self.responses._streamResponseChunks(messages, combinedOptions)) {
+                const newTokenIndices = {
+                    prompt: (options as { promptIndex?: number })?.promptIndex ?? 0,
+                    completion: (chunk.generationInfo as { completion?: number } | undefined)?.completion ?? 0
+                }
+                yield chunk
+                await runManager?.handleLLMNewToken(chunk.text ?? '', newTokenIndices, undefined, undefined, undefined, { chunk })
+            }
+            return
+        }
+        yield* super._streamResponseChunks(messages, options, runManager)
     }
 }

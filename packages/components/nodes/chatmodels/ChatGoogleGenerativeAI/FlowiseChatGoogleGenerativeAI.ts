@@ -691,9 +691,15 @@ export class LangchainChatGoogleGenerativeAI
             }
         )
         if (this.thinkingBudget !== undefined) {
-            ;(this.client.generationConfig as any).thinkingConfig = {
-                ...(this.thinkingBudget !== undefined ? { thinkingBudget: this.thinkingBudget } : {})
+            // API only returns thought parts in candidates when includeThoughts is true (see Gemini thinking docs).
+            // thinkingBudget 0 turns extended thinking off; do not request thought summaries in that case.
+            const thinkingConfig: { thinkingBudget: number; includeThoughts?: boolean } = {
+                thinkingBudget: this.thinkingBudget
             }
+            if (this.thinkingBudget !== 0) {
+                thinkingConfig.includeThoughts = true
+            }
+            ;(this.client.generationConfig as Record<string, unknown>).thinkingConfig = thinkingConfig
         }
         this.streamUsage = fields.streamUsage ?? this.streamUsage
     }
@@ -702,9 +708,13 @@ export class LangchainChatGoogleGenerativeAI
         if (!this.apiKey) return
         this.client = new GenerativeAI(this.apiKey).getGenerativeModelFromCachedContent(cachedContent, modelParams, requestOptions)
         if (this.thinkingBudget !== undefined) {
-            ;(this.client.generationConfig as any).thinkingConfig = {
-                ...(this.thinkingBudget !== undefined ? { thinkingBudget: this.thinkingBudget } : {})
+            const thinkingConfig: { thinkingBudget: number; includeThoughts?: boolean } = {
+                thinkingBudget: this.thinkingBudget
             }
+            if (this.thinkingBudget !== 0) {
+                thinkingConfig.includeThoughts = true
+            }
+            ;(this.client.generationConfig as Record<string, unknown>).thinkingConfig = thinkingConfig
         }
     }
 
@@ -732,13 +742,20 @@ export class LangchainChatGoogleGenerativeAI
     }
 
     getLsParams(options: this['ParsedCallOptions']): LangSmithParams {
+        const gc = this.client.generationConfig as {
+            temperature?: number
+            maxOutputTokens?: number
+            thinkingConfig?: { thinkingBudget?: number; includeThoughts?: boolean }
+        }
+        const thinkingBudget = gc.thinkingConfig?.thinkingBudget
         return {
             ls_provider: 'google_genai',
             ls_model_name: this.model,
             ls_model_type: 'chat',
-            ls_temperature: this.client.generationConfig.temperature,
-            ls_max_tokens: this.client.generationConfig.maxOutputTokens,
-            ls_stop: options.stop
+            ls_temperature: gc.temperature,
+            ls_max_tokens: gc.maxOutputTokens,
+            ls_stop: options.stop,
+            ...(thinkingBudget !== undefined ? { ls_thinking_budget: thinkingBudget } : {})
         }
     }
 
@@ -781,7 +798,8 @@ export class LangchainChatGoogleGenerativeAI
             ...(toolsAndConfig?.toolConfig ? { toolConfig: toolsAndConfig.toolConfig } : {})
         }
 
-        // Add imageConfig for image generation models
+        // Include full generationConfig (temperature, thinkingConfig, etc.) so LangSmith
+        // `invocation_params` matches what the SDK sends (merged in generateContentStream).
         if (this.aspectRatio) {
             params.generationConfig = {
                 ...this.client.generationConfig,
@@ -789,6 +807,10 @@ export class LangchainChatGoogleGenerativeAI
                 imageConfig: {
                     aspectRatio: this.aspectRatio
                 }
+            }
+        } else {
+            params.generationConfig = {
+                ...this.client.generationConfig
             }
         }
 
@@ -926,13 +948,20 @@ export class LangchainChatGoogleGenerativeAI
                 usageMetadata,
                 index
             })
+            const completionIdx = index
             index += 1
             if (!chunk) {
                 continue
             }
 
             yield chunk
-            await runManager?.handleLLMNewToken(chunk.text ?? '')
+            const newTokenIndices = {
+                prompt: (options as { promptIndex?: number })?.promptIndex ?? 0,
+                completion: (chunk.generationInfo as { completion?: number } | undefined)?.completion ?? completionIdx
+            }
+            await runManager?.handleLLMNewToken(chunk.text ?? '', newTokenIndices, undefined, undefined, undefined, {
+                chunk
+            })
         }
     }
 
@@ -1189,6 +1218,7 @@ export class ChatGoogleGenerativeAI extends LangchainChatGoogleGenerativeAI impl
 
         let index = 0
         for await (const chunk of stream.stream) {
+            const completionIdx = index
             const chunkResult = await convertResponseContentToChatGenerationChunk(chunk, {
                 usageMetadata: chunk.usageMetadata ? {
                     input_tokens: chunk.usageMetadata.promptTokenCount ?? 0,
@@ -1200,10 +1230,16 @@ export class ChatGoogleGenerativeAI extends LangchainChatGoogleGenerativeAI impl
                 orgId: this.flowContext?.orgId,
                 chatId: this.flowContext?.chatId
             })
+            index += 1
             if (chunkResult) {
-                await runManager?.handleLLMNewToken(chunkResult.text)
                 yield chunkResult
-                index += 1
+                const newTokenIndices = {
+                    prompt: (options as { promptIndex?: number })?.promptIndex ?? 0,
+                    completion: (chunkResult.generationInfo as { completion?: number } | undefined)?.completion ?? completionIdx
+                }
+                await runManager?.handleLLMNewToken(chunkResult.text ?? '', newTokenIndices, undefined, undefined, undefined, {
+                    chunk: chunkResult
+                })
             }
         }
     }
