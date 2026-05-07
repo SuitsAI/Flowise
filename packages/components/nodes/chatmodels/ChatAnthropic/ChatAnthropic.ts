@@ -21,7 +21,7 @@ class ChatAnthropic_ChatModels implements INode {
     constructor() {
         this.label = 'ChatAnthropic'
         this.name = 'chatAnthropic'
-        this.version = 9.0
+        this.version = 9.1
         this.type = 'ChatAnthropic'
         this.icon = 'Anthropic.svg'
         this.category = 'Chat Models'
@@ -91,7 +91,8 @@ class ChatAnthropic_ChatModels implements INode {
                 label: 'Extended Thinking',
                 name: 'extendedThinking',
                 type: 'boolean',
-                description: 'Enable extended thinking for reasoning model such as Claude Sonnet 3.7 and Claude 4',
+                description:
+                    'Turn on to stream Claude internal thinking separately from the answer (SSE event name: llmReasoning). Supported on Sonnet 3.7+, Claude 4 / Sonnet 4.x, etc. If off, you only get normal answer tokens.',
                 optional: true,
                 additionalParams: true
             },
@@ -128,7 +129,38 @@ class ChatAnthropic_ChatModels implements INode {
                 label: 'Beta',
                 name: 'beta',
                 type: 'string',
-                description: 'Beta parameter for experimental features',
+                description:
+                    'Beta parameter for experimental features (e.g. <code>compact-2026-01-12</code> when enabling Compaction below). Multiple values can be comma-separated.',
+                optional: true,
+                additionalParams: true
+            },
+            {
+                label: 'Compaction',
+                name: 'compaction',
+                type: 'boolean',
+                description:
+                    'Enable <a href="https://platform.claude.com/docs/en/build-with-claude/compaction" target="_blank">server-side context compaction</a> to extend long conversations. Requires the <code>compact-2026-01-12</code> beta header (set in the Beta field above) and a supported model (Claude Opus 4.6+, Sonnet 4.6+).',
+                default: false,
+                optional: true,
+                additionalParams: true
+            },
+            {
+                label: 'Compaction Trigger Tokens',
+                name: 'compactionTriggerTokens',
+                type: 'number',
+                step: 1000,
+                description:
+                    'Input token threshold that triggers compaction. Defaults to 150,000 if left empty. Must be at least 50,000.',
+                optional: true,
+                additionalParams: true
+            },
+            {
+                label: 'Compaction Instructions',
+                name: 'compactionInstructions',
+                type: 'string',
+                rows: 4,
+                description:
+                    'Custom summarization prompt used when compaction triggers. Completely replaces the default prompt when provided.',
                 optional: true,
                 additionalParams: true
             }
@@ -154,6 +186,9 @@ class ChatAnthropic_ChatModels implements INode {
         const budgetTokens = nodeData.inputs?.budgetTokens as string
         const beta = nodeData.inputs?.beta as string
         const promptCaching = nodeData.inputs?.promptCaching as boolean
+        const compaction = nodeData.inputs?.compaction as boolean
+        const compactionTriggerTokens = nodeData.inputs?.compactionTriggerTokens as string
+        const compactionInstructions = nodeData.inputs?.compactionInstructions as string
 
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const anthropicApiKey = getCredentialParam('anthropicApiKey', credentialData, nodeData)
@@ -183,6 +218,15 @@ class ChatAnthropic_ChatModels implements INode {
                 budget_tokens: parseInt(budgetTokens, 10)
             }
             delete obj.temperature
+        }
+
+        if (compaction) {
+            const edit: Record<string, unknown> = { type: 'compact_20260112' }
+            if (compactionTriggerTokens) {
+                edit.trigger = { type: 'input_tokens', value: parseInt(compactionTriggerTokens, 10) }
+            }
+            if (compactionInstructions) edit.instructions = compactionInstructions
+            obj.contextManagement = { edits: [edit] } as unknown as AnthropicInput['contextManagement']
         }
 
         const multiModalOption: IMultiModalOption = {

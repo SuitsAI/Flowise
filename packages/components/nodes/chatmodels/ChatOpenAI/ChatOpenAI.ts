@@ -179,7 +179,8 @@ class ChatOpenAI_ChatModels implements INode {
             },
             {
                 label: 'Reasoning',
-                description: 'Whether the model supports reasoning. Only applicable for reasoning models.',
+                description:
+                    'Turn on to stream model reasoning separately from answer tokens (SSE event name: llmReasoning). Only applicable to reasoning-capable models.',
                 name: 'reasoning',
                 type: 'boolean',
                 default: false,
@@ -217,7 +218,7 @@ class ChatOpenAI_ChatModels implements INode {
             },
             {
                 label: 'Reasoning Summary',
-                description: `A summary of the reasoning performed by the model. This can be useful for debugging and understanding the model's reasoning process`,
+                description: `Controls OpenAI reasoning summary output. When available, Flowise streams it in llmReasoning SSE events.`,
                 name: 'reasoningSummary',
                 type: 'options',
                 options: [
@@ -286,6 +287,7 @@ class ChatOpenAI_ChatModels implements INode {
         const basePath = nodeData.inputs?.basepath as string
         const proxyUrl = nodeData.inputs?.proxyUrl as string
         const baseOptions = nodeData.inputs?.baseOptions
+        const reasoningEnabled = nodeData.inputs?.reasoning === true
         const reasoningEffort = nodeData.inputs?.reasoningEffort as OpenAIClient.ReasoningEffort | null
         const reasoningSummary = nodeData.inputs?.reasoningSummary as 'auto' | 'concise' | 'detailed' | null
         const verbosity = nodeData.inputs?.verbosity as 'low' | 'medium' | 'high' | null
@@ -331,7 +333,13 @@ class ChatOpenAI_ChatModels implements INode {
             if (reasoningSummary) {
                 reasoning.summary = reasoningSummary
             }
-            obj.reasoning = reasoning
+            // UI toggle alone should still request reasoning summary streams when sub-fields were left default-empty.
+            if (reasoningEnabled && Object.keys(reasoning).length === 0) {
+                reasoning.summary = 'auto'
+            }
+            if (Object.keys(reasoning).length > 0) {
+                obj.reasoning = reasoning
+            }
         }
 
         if (modelName.includes('gpt-5') && verbosity) {

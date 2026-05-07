@@ -1198,6 +1198,16 @@ export const replaceInputsWithConfig = (
                 }
             }
 
+            const currentInputValue = inputsObj[config]
+            const isAcceptVariable = flowNodeData.inputParams?.find((param) => param.name === config)?.acceptVariable ?? false
+            const hasVariableTemplate =
+                typeof currentInputValue === 'string' && currentInputValue.includes('{{') && currentInputValue.includes('}}')
+
+            // If a field supports variables and already references a variable, keep it over static override config.
+            if (isAcceptVariable && hasVariableTemplate) {
+                continue
+            }
+
             let paramValue = inputsObj[config]
             const overrideConfigValue = overrideConfig[config]
             if (overrideConfigValue) {

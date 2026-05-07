@@ -86,24 +86,24 @@ class DynamicCustom_MCP implements INode {
             try {
                 mcpConfigValues = typeof mcpConfigValuesStr === 'object' ? mcpConfigValuesStr : JSON.parse(mcpConfigValuesStr)
             } catch (exception) {
-                throw new Error("Invalid JSON in the DynamicCustomMCP's mcpConfigValues: " + exception)
+                return []
+                //throw new Error("Invalid JSON in the DynamicCustomMCP's mcpConfigValues: " + exception)
             }
         }
 
         const mcpServerConfig = nodeData.inputs?.mcpServerConfig as string
 
         if (!mcpServerConfig) {
-            throw new Error('MCP Server Config is required')
+            return []
+            //throw new Error('MCP Server Config is required')
         }
-
-        console.log('mcpConfigValues', mcpConfigValues)
 
         try {
             let serverParams
             if (typeof mcpServerConfig === 'object') {
                 serverParams = mcpServerConfig
             } else if (typeof mcpServerConfig === 'string') {
-                const serverParamsString = convertToValidJSONString(mcpServerConfig)
+                const serverParamsString = convertToValidJSONString(mcpServerConfig, mcpConfigValues)
                 serverParams = JSON.parse(serverParamsString)
             }
 
@@ -113,7 +113,6 @@ class DynamicCustom_MCP implements INode {
             }
             serverParams = JSON.parse(tmpServerParams)
 
-            console.log('serverParams', serverParams)
 
             // Compatible with stdio and SSE
             let toolkit: MCPToolkit
@@ -129,14 +128,19 @@ class DynamicCustom_MCP implements INode {
 
             return tools as Tool[]
         } catch (error) {
-            throw new Error(`Invalid MCP Server Config: ${error}`)
+            return []
+            //throw new Error(`Invalid MCP Server Config: ${error}`)
         }
     }
 }
 
-function convertToValidJSONString(inputString: string) {
+function convertToValidJSONString(inputString: string, mcpConfigValues: ICommonObject) {
     try {
-        const jsObject = Function('return ' + inputString)()
+        let tmpServerParams = inputString
+        for (const key in mcpConfigValues) {
+            tmpServerParams = tmpServerParams.replace(new RegExp(`{${key}}`, 'g'), mcpConfigValues[key])
+        }
+        const jsObject = Function('return ' + tmpServerParams)()
         return JSON.stringify(jsObject, null, 2)
     } catch (error) {
         console.error('Error converting to JSON:', error)

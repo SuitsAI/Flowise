@@ -11,7 +11,7 @@ import {
     IServerSideEventStreamer,
     IUsedTool
 } from '../../../src/Interface'
-import { AIMessageChunk, BaseMessageLike, MessageContentText } from '@langchain/core/messages'
+import { AIMessageChunk, BaseMessageLike } from '@langchain/core/messages'
 import { AnalyticHandler } from '../../../src/handler'
 import { DEFAULT_SUMMARIZER_TEMPLATE } from '../prompt'
 import { ILLMMessage } from '../Interface.Agentflow'
@@ -20,6 +20,7 @@ import { ARTIFACTS_PREFIX, SOURCE_DOCUMENTS_PREFIX, TOOL_ARGS_PREFIX } from '../
 import { flatten } from 'lodash'
 import zodToJsonSchema from 'zod-to-json-schema'
 import { getErrorMessage } from '../../../src/error'
+import { extractLLMStreamDeltas, getAnswerTextFromMessageContent } from '../../../src/streamingReasoning'
 import { DataSource } from 'typeorm'
 import {
     getPastChatHistoryImageMessages,
@@ -1084,7 +1085,7 @@ class Agent_Agentflow implements INode {
                 // Stream whole response back to UI if not streaming and no tool calls
                 let finalResponse = ''
                 if (response.content && Array.isArray(response.content)) {
-                    finalResponse = response.content.map((item: any) => item.text).join('\n')
+                    finalResponse = getAnswerTextFromMessageContent(response.content)
                 } else if (response.content && typeof response.content === 'string') {
                     finalResponse = response.content
                 } else {
@@ -1113,7 +1114,7 @@ class Agent_Agentflow implements INode {
             // Prepare final response and output object
             let finalResponse = ''
             if (response.content && Array.isArray(response.content)) {
-                finalResponse = response.content.map((item: any) => item.text).join('\n')
+                finalResponse = getAnswerTextFromMessageContent(response.content)
             } else if (response.content && typeof response.content === 'string') {
                 finalResponse = response.content
             } else {
@@ -1568,14 +1569,13 @@ class Agent_Agentflow implements INode {
         try {
             for await (const chunk of await llmNodeInstance.stream(messages, { signal: abortController?.signal })) {
                 if (sseStreamer) {
-                    let content = ''
-                    if (Array.isArray(chunk.content) && chunk.content.length > 0) {
-                        const contents = chunk.content as MessageContentText[]
-                        content = contents.map((item) => item.text).join('')
-                    } else {
-                        content = chunk.content.toString()
+                    const { reasoningDelta, textDelta } = extractLLMStreamDeltas(chunk, '')
+                    if (reasoningDelta) {
+                        sseStreamer.streamLLMReasoningEvent(chatId, reasoningDelta)
                     }
-                    sseStreamer.streamTokenEvent(chatId, content)
+                    if (textDelta) {
+                        sseStreamer.streamTokenEvent(chatId, textDelta)
+                    }
                 }
 
                 response = response.concat(chunk)
@@ -1585,8 +1585,7 @@ class Agent_Agentflow implements INode {
             throw error
         }
         if (Array.isArray(response.content) && response.content.length > 0) {
-            const responseContents = response.content as MessageContentText[]
-            response.content = responseContents.map((item) => item.text).join('')
+            response.content = getAnswerTextFromMessageContent(response.content)
         }
         return response
     }

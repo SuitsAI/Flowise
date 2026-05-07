@@ -134,7 +134,7 @@ class Custom_MCP implements INode {
     async getTools(nodeData: INodeData, options: ICommonObject, getToolsOptions?: { skipCache?: boolean }): Promise<Tool[]> {
         const mcpServerConfig = nodeData.inputs?.mcpServerConfig as string
         if (!mcpServerConfig) {
-            throw new Error('MCP Server Config is required')
+            return []
         }
 
         let sandbox: ICommonObject = {}
@@ -204,7 +204,8 @@ class Custom_MCP implements INode {
 
             return tools as Tool[]
         } catch (error) {
-            throw new Error(`Invalid MCP Server Config: ${error}`)
+            //throw new Error(`Invalid MCP Server Config: ${error}`)
+            return []
         }
     }
 }
