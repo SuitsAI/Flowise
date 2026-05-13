@@ -43,6 +43,18 @@ function getMimeFromPath(filePath: string): string {
     return EXT_TO_MIME[ext] ?? 'application/octet-stream'
 }
 
+/** Same semantics as executeJavaScriptCode in src/utils.ts (default 300000 ms, override via SANDBOX_TIMEOUT). */
+function getSandboxTimeoutMs(): number {
+    let timeoutMs = 300000
+    if (process.env.SANDBOX_TIMEOUT) {
+        const parsed = parseInt(process.env.SANDBOX_TIMEOUT, 10)
+        if (Number.isFinite(parsed) && parsed > 0) {
+            timeoutMs = parsed
+        }
+    }
+    return timeoutMs
+}
+
 class Code_Interpreter_Tools implements INode {
     label: string
     name: string
@@ -275,12 +287,20 @@ export class E2BTool extends StructuredTool {
                 // this.instance = await CodeInterpreter.create({ apiKey: this.apiKey })
                 // const execution = await this.instance.notebook.execCell(arg?.input)
 
+                const sandboxTimeoutMs = getSandboxTimeoutMs()
                 if (this.sandboxId && this.sandboxId !== ' ') {
                     // Connect to an existing sandbox if sandboxId is provided
-                    this.instance = await Sandbox.connect(this.sandboxId, { apiKey: this.apiKey })
+                    this.instance = await Sandbox.connect(this.sandboxId, {
+                        apiKey: this.apiKey,
+                        requestTimeoutMs: sandboxTimeoutMs
+                    })
                 } else {
                     // Create a new sandbox if no sandboxId is provided
-                    this.instance = await Sandbox.create({ apiKey: this.apiKey })
+                    this.instance = await Sandbox.create({
+                        apiKey: this.apiKey,
+                        timeoutMs: sandboxTimeoutMs,
+                        requestTimeoutMs: sandboxTimeoutMs
+                    })
                 }
                 
                 // Ensure /generated exists so code can save files there
@@ -290,7 +310,11 @@ export class E2BTool extends StructuredTool {
                     await this.instance.commands.run(arg?.command);
                 }
 
-                const execution = await this.instance.runCode(arg?.code, { language: 'python' })
+                const execution = await this.instance.runCode(arg?.code, {
+                    language: 'python',
+                    timeoutMs: sandboxTimeoutMs,
+                    requestTimeoutMs: sandboxTimeoutMs
+                })
 
                 const artifacts = []
                 for (const result of execution.results) {
