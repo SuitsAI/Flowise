@@ -1487,6 +1487,19 @@ const parseOutput = (output: any): any => {
 }
 
 /**
+ * Default timeout for NodeVM / E2B sandbox execution paths; overridden by SANDBOX_TIMEOUT when set to a positive integer (ms).
+ */
+export function getSandboxTimeoutMs(fallbackMs: number = 300000): number {
+    if (process.env.SANDBOX_TIMEOUT) {
+        const parsed = parseInt(process.env.SANDBOX_TIMEOUT, 10)
+        if (Number.isFinite(parsed) && parsed > 0) {
+            return parsed
+        }
+    }
+    return fallbackMs
+}
+
+/**
  * Execute JavaScript code using either Sandbox or NodeVM
  * @param {string} code - The JavaScript code to execute
  * @param {ICommonObject} sandbox - The sandbox object with variables
@@ -1506,10 +1519,7 @@ export const executeJavaScriptCode = async (
 ): Promise<any> => {
     const { timeout = 300000, useSandbox = true, streamOutput, libraries = [], nodeVMOptions = {} } = options
     const shouldUseSandbox = useSandbox && process.env.E2B_APIKEY
-    let timeoutMs = timeout
-    if (process.env.SANDBOX_TIMEOUT) {
-        timeoutMs = parseInt(process.env.SANDBOX_TIMEOUT, 10)
-    }
+    const timeoutMs = getSandboxTimeoutMs(timeout)
 
     if (shouldUseSandbox) {
         try {

@@ -1,5 +1,11 @@
 import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
-import { getBaseClasses, getCredentialData, getCredentialParam, parseWithTypeConversion } from '../../../src/utils'
+import {
+    getBaseClasses,
+    getCredentialData,
+    getCredentialParam,
+    getSandboxTimeoutMs,
+    parseWithTypeConversion
+} from '../../../src/utils'
 import { StructuredTool, ToolInputParsingException, ToolParams } from '@langchain/core/tools'
 import { Sandbox } from '@e2b/code-interpreter'
 import { z } from 'zod'
@@ -41,18 +47,6 @@ const EXT_TO_MIME: Record<string, string> = {
 function getMimeFromPath(filePath: string): string {
     const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase()
     return EXT_TO_MIME[ext] ?? 'application/octet-stream'
-}
-
-/** Same semantics as executeJavaScriptCode in src/utils.ts (default 300000 ms, override via SANDBOX_TIMEOUT). */
-function getSandboxTimeoutMs(): number {
-    let timeoutMs = 300000
-    if (process.env.SANDBOX_TIMEOUT) {
-        const parsed = parseInt(process.env.SANDBOX_TIMEOUT, 10)
-        if (Number.isFinite(parsed) && parsed > 0) {
-            timeoutMs = parsed
-        }
-    }
-    return timeoutMs
 }
 
 class Code_Interpreter_Tools implements INode {
@@ -101,6 +95,14 @@ class Code_Interpreter_Tools implements INode {
                 default: DESC
             },
             {
+                label: 'Save to Memory',
+                name: 'saveToMemory',
+                description: "When enabled, this tool's input and output are stored in chat memory (only for tools with this option enabled)",
+                type: 'boolean',
+                default: false,
+                optional: true
+            },
+            {
                 label: 'Sandbox ID',
                 name: 'sandboxId',
                 type: 'string',
@@ -116,11 +118,12 @@ class Code_Interpreter_Tools implements INode {
         const toolDesc = nodeData.inputs?.toolDesc as string
         const toolName = nodeData.inputs?.toolName as string
         const sandboxId = nodeData.inputs?.sandboxId as string
+        const saveToMemory = nodeData.inputs?.saveToMemory as boolean
 
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const e2bApiKey = getCredentialParam('e2bApiKey', credentialData, nodeData)
 
-        return await E2BTool.initialize({
+        const tool = await E2BTool.initialize({
             description: toolDesc ?? DESC,
             name: toolName ?? NAME,
             apiKey: e2bApiKey,
@@ -159,6 +162,8 @@ class Code_Interpreter_Tools implements INode {
             sandboxId: sandboxId,
             orgId: options.orgId
         })
+        ;(tool as any).flowiseSaveToMemory = saveToMemory === true
+        return tool
     }
 }
 
