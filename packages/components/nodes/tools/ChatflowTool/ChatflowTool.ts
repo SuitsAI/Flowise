@@ -362,19 +362,27 @@ class ChatflowTool extends StructuredTool {
             const resp = (await fetchResponse.json()) as {
                 text?: string
                 chatId?: string
-                artifacts?: { data?: string }[]
+                artifacts?: { data?: string; name?: string }[]
             }
 
             let result = resp.text || ''
             if (resp.artifacts && Array.isArray(resp.artifacts) && resp.artifacts.length > 0) {
                 const mainPath = `${this.baseURL}/api/v1/get-upload-file?chatflowId=${this.chatflowid}&chatId=${resp.chatId}&fileName=`
-                const artifactsWithUrls = resp.artifacts.map((artifact) => {
+                const artifactsWithUrls: { data?: string; name?: string }[] = resp.artifacts.map((artifact) => {
                     if (artifact && artifact.data) {
+                        const fileName = artifact.data.replace('FILE-STORAGE::', '')
                         const fileUrl = artifact.data.replace('FILE-STORAGE::', mainPath)
-                        return { ...artifact, data: fileUrl }
+                        return { ...artifact, data: fileUrl, name: fileName }
                     }
-                    return artifact
+                    return { ...artifact }
                 })
+                result +=
+                    '\n\n' +
+                    artifactsWithUrls
+                        .filter((a) => a.name && a.data)
+                        .map((artifact) => `[${artifact.name}](${artifact.data})`)
+                        .join('\n') +
+                    '\n\n'
                 result += ARTIFACTS_PREFIX + JSON.stringify(artifactsWithUrls)
             }
 
