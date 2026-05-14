@@ -4,8 +4,13 @@ import { RunnableConfig } from '@langchain/core/runnables'
 import { CallbackManagerForToolRun, Callbacks, CallbackManager, parseCallbackConfigArg } from '@langchain/core/callbacks/manager'
 import { StructuredTool } from '@langchain/core/tools'
 import { ICommonObject, IDatabaseEntity, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
-import { getCredentialData, getCredentialParam, getSandboxTimeoutMs, parseWithTypeConversion } from '../../../src/utils'
-import { secureFetch } from '../../../src/httpSecurity'
+import {
+    getCredentialData,
+    getCredentialParam,
+    executeJavaScriptCode,
+    createCodeExecutionSandbox,
+    parseWithTypeConversion
+} from '../../../src/utils'
 import { isValidUUID, isValidURL } from '../../../src/validator'
 import { v4 as uuidv4 } from 'uuid'
 import { ARTIFACTS_PREFIX } from '../../../src/agents'
@@ -25,7 +30,7 @@ class ChatflowTool_Tools implements INode {
     constructor() {
         this.label = 'Chatflow Tool'
         this.name = 'ChatflowTool'
-        this.version = 5.2
+        this.version = 5.1
         this.type = 'ChatflowTool'
         this.icon = 'chatflowTool.svg'
         this.category = 'Tools'
@@ -337,58 +342,83 @@ class ChatflowTool extends StructuredTool {
             }
         }
 
-        const url = `${this.baseURL}/api/v1/prediction/${this.chatflowid}`
-        const timeoutMs = getSandboxTimeoutMs()
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-
-        try {
-            const fetchResponse = await secureFetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'flowise-tool': 'true',
-                    ...(this.headers as Record<string, string>)
-                },
-                body: JSON.stringify(body),
-                signal: controller.signal as any
-            })
-
-            if (!fetchResponse.ok) {
-                const errBody = await fetchResponse.text().catch(() => '')
-                throw new Error(`ChatflowTool prediction failed: HTTP ${fetchResponse.status} ${errBody.slice(0, 800)}`)
-            }
-
-            const resp = (await fetchResponse.json()) as {
-                text?: string
-                chatId?: string
-                artifacts?: { data?: string }[]
-            }
-
-            let result = resp.text || ''
-            if (resp.artifacts && Array.isArray(resp.artifacts) && resp.artifacts.length > 0) {
-                const mainPath = `${this.baseURL}/api/v1/get-upload-file?chatflowId=${this.chatflowid}&chatId=${resp.chatId}&fileName=`
-                const artifactsWithUrls = resp.artifacts.map((artifact) => {
-                    if (artifact && artifact.data) {
-                        const fileUrl = artifact.data.replace('FILE-STORAGE::', mainPath)
-                        return { ...artifact, data: fileUrl }
-                    }
-                    return artifact
-                })
-                result += ARTIFACTS_PREFIX + JSON.stringify(artifactsWithUrls)
-            }
-
-            return result
-        } catch (e) {
-            if (e instanceof Error && e.name === 'AbortError') {
-                throw new Error(
-                    `ChatflowTool prediction timed out after ${timeoutMs}ms (SANDBOX_TIMEOUT). Nested chatflow may still be running on the server.`
-                )
-            }
-            throw e instanceof Error ? e : new Error(String(e))
-        } finally {
-            clearTimeout(timeoutId)
+        const options = {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'flowise-tool': 'true',
+                ...this.headers
+            },
+            body: JSON.stringify(body)
         }
+
+        const code = `
+const fetch = require('node-fetch');
+const url = "${this.baseURL}/api/v1/prediction/${this.chatflowid}";
+
+const body = $callBody;
+
+const options = $callOptions;
+
+try {
+    const response = await fetch(url, options);
+    const resp = await response.json();
+    let result = resp.text || '';
+    if (resp.artifacts && Array.isArray(resp.artifacts) && resp.artifacts.length > 0) {
+        const artifactsWithUrls = resp.artifacts.map(function(artifact) {
+            if (artifact && artifact.data) {
+                const mainPath = "${this.baseURL}/api/v1/get-upload-file?chatflowId=${this.chatflowid}&chatId=" + resp.chatId + "&fileName=";
+                const fileUrl = artifact.data.replace('FILE-STORAGE::', mainPath);
+                return Object.assign({}, artifact, { data: fileUrl });
+            }
+            return artifact;
+        });
+        const mdLines = [];
+        for (var mi = 0; mi < artifactsWithUrls.length; mi++) {
+            var art = artifactsWithUrls[mi];
+            if (!art || !art.data) continue;
+            var linkUrl = String(art.data);
+            var disp = art.name || art.filename || '';
+            if (!disp) {
+                try {
+                    var parsedArtifactUrl = new URL(linkUrl);
+                    var fileNameParam = parsedArtifactUrl.searchParams.get('fileName');
+                    if (fileNameParam) disp = decodeURIComponent(fileNameParam);
+                } catch (artifactUrlErr) {}
+            }
+            if (!disp) disp = art.type ? String(art.type) : 'File';
+            disp = String(disp).replace(/\\]/g, '\\\\]');
+            mdLines.push('[' + disp + '](' + linkUrl + ')');
+        }
+        if (mdLines.length > 0) {
+            result += '\n\n' + mdLines.join('\n') + '\n\n';
+        }
+        result += ${JSON.stringify(ARTIFACTS_PREFIX)} + JSON.stringify(artifactsWithUrls);
+    }
+    return result;
+} catch (error) {
+    console.error(error);
+    return '';
+}
+`;
+
+        // Create additional sandbox variables
+        const additionalSandbox: ICommonObject = {
+            $callOptions: options,
+            $callBody: body
+        }
+
+        const sandbox = createCodeExecutionSandbox('', [], {}, additionalSandbox)
+
+        let response = await executeJavaScriptCode(code, sandbox, {
+            useSandbox: false
+        })
+
+        if (typeof response === 'object') {
+            response = JSON.stringify(response)
+        }
+
+        return response
     }
 }
 
