@@ -1,5 +1,11 @@
 import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
-import { getBaseClasses, getCredentialData, getCredentialParam, parseWithTypeConversion } from '../../../src/utils'
+import {
+    getBaseClasses,
+    getCredentialData,
+    getCredentialParam,
+    getSandboxTimeoutMs,
+    parseWithTypeConversion
+} from '../../../src/utils'
 import { StructuredTool, ToolInputParsingException, ToolParams } from '@langchain/core/tools'
 import { Sandbox } from '@e2b/code-interpreter'
 import { z } from 'zod'
@@ -89,6 +95,14 @@ class Code_Interpreter_Tools implements INode {
                 default: DESC
             },
             {
+                label: 'Save to Memory',
+                name: 'saveToMemory',
+                description: "When enabled, this tool's input and output are stored in chat memory (only for tools with this option enabled)",
+                type: 'boolean',
+                default: false,
+                optional: true
+            },
+            {
                 label: 'Sandbox ID',
                 name: 'sandboxId',
                 type: 'string',
@@ -104,11 +118,12 @@ class Code_Interpreter_Tools implements INode {
         const toolDesc = nodeData.inputs?.toolDesc as string
         const toolName = nodeData.inputs?.toolName as string
         const sandboxId = nodeData.inputs?.sandboxId as string
+        const saveToMemory = nodeData.inputs?.saveToMemory as boolean
 
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const e2bApiKey = getCredentialParam('e2bApiKey', credentialData, nodeData)
 
-        return await E2BTool.initialize({
+        const tool = await E2BTool.initialize({
             description: toolDesc ?? DESC,
             name: toolName ?? NAME,
             apiKey: e2bApiKey,
@@ -147,6 +162,8 @@ class Code_Interpreter_Tools implements INode {
             sandboxId: sandboxId,
             orgId: options.orgId
         })
+        ;(tool as any).flowiseSaveToMemory = saveToMemory === true
+        return tool
     }
 }
 
@@ -275,12 +292,20 @@ export class E2BTool extends StructuredTool {
                 // this.instance = await CodeInterpreter.create({ apiKey: this.apiKey })
                 // const execution = await this.instance.notebook.execCell(arg?.input)
 
+                const sandboxTimeoutMs = getSandboxTimeoutMs()
                 if (this.sandboxId && this.sandboxId !== ' ') {
                     // Connect to an existing sandbox if sandboxId is provided
-                    this.instance = await Sandbox.connect(this.sandboxId, { apiKey: this.apiKey })
+                    this.instance = await Sandbox.connect(this.sandboxId, {
+                        apiKey: this.apiKey,
+                        requestTimeoutMs: sandboxTimeoutMs
+                    })
                 } else {
                     // Create a new sandbox if no sandboxId is provided
-                    this.instance = await Sandbox.create({ apiKey: this.apiKey })
+                    this.instance = await Sandbox.create({
+                        apiKey: this.apiKey,
+                        timeoutMs: sandboxTimeoutMs,
+                        requestTimeoutMs: sandboxTimeoutMs
+                    })
                 }
                 
                 // Ensure /generated exists so code can save files there
@@ -290,7 +315,11 @@ export class E2BTool extends StructuredTool {
                     await this.instance.commands.run(arg?.command);
                 }
 
-                const execution = await this.instance.runCode(arg?.code, { language: 'python' })
+                const execution = await this.instance.runCode(arg?.code, {
+                    language: 'python',
+                    timeoutMs: sandboxTimeoutMs,
+                    requestTimeoutMs: sandboxTimeoutMs
+                })
 
                 const artifacts = []
                 for (const result of execution.results) {
