@@ -189,8 +189,6 @@ export class E2BTool extends StructuredTool {
 
     description = DESC
 
-    instance: Sandbox
-
     apiKey: string
 
     schema
@@ -287,135 +285,138 @@ export class E2BTool extends StructuredTool {
         flowConfig?: { sessionId?: string; chatId?: string; input?: string }
     ): Promise<string> {
         flowConfig = { ...this.flowObj, ...flowConfig }
+        if (!('code' in arg)) {
+            return 'No input provided'
+        }
+
+        // Use a local variable (not a class field) so concurrent invocations of the same
+        // tool instance don't clobber each other's sandbox reference, and so the Sandbox
+        // JS wrapper becomes eligible for GC as soon as this call returns.
+        // The remote sandbox itself is intentionally left alive so the agent can reconnect
+        // to it via `sandboxId` in subsequent calls.
+        let sandbox: Sandbox | undefined
+
         try {
-            if ('code' in arg) {
-                // this.instance = await CodeInterpreter.create({ apiKey: this.apiKey })
-                // const execution = await this.instance.notebook.execCell(arg?.input)
-
-                const sandboxTimeoutMs = getSandboxTimeoutMs()
-                if (this.sandboxId && this.sandboxId !== ' ') {
-                    // Connect to an existing sandbox if sandboxId is provided
-                    this.instance = await Sandbox.connect(this.sandboxId, {
-                        apiKey: this.apiKey,
-                        requestTimeoutMs: sandboxTimeoutMs
-                    })
-                } else {
-                    // Create a new sandbox if no sandboxId is provided
-                    this.instance = await Sandbox.create({
-                        apiKey: this.apiKey,
-                        timeoutMs: sandboxTimeoutMs,
-                        requestTimeoutMs: sandboxTimeoutMs
-                    })
-                }
-                
-                // Ensure /generated exists so code can save files there
-                await this.instance.files.makeDir(GENERATED_DIR).catch(() => {})
-
-                if (arg?.command) {
-                    await this.instance.commands.run(arg?.command);
-                }
-
-                const execution = await this.instance.runCode(arg?.code, {
-                    language: 'python',
+            const sandboxTimeoutMs = getSandboxTimeoutMs()
+            if (this.sandboxId && this.sandboxId !== ' ') {
+                sandbox = await Sandbox.connect(this.sandboxId, {
+                    apiKey: this.apiKey,
+                    requestTimeoutMs: sandboxTimeoutMs
+                })
+            } else {
+                sandbox = await Sandbox.create({
+                    apiKey: this.apiKey,
                     timeoutMs: sandboxTimeoutMs,
                     requestTimeoutMs: sandboxTimeoutMs
                 })
-
-                const artifacts = []
-                for (const result of execution.results) {
-                    for (const key in result) {
-                        if (!(result as any)[key]) continue
-
-                        if (key === 'png') {
-                            //@ts-ignore
-                            const pngData = Buffer.from(result.png, 'base64')
-
-                            const filename = `artifact_${Date.now()}.png`
-
-                            // Don't check storage usage because this is incoming file, and if we throw error, agent will keep on retrying
-                            const { path } = await addSingleFileToStorage(
-                                'image/png',
-                                pngData,
-                                filename,
-                                this.orgId,
-                                this.chatflowid,
-                                flowConfig!.chatId as string
-                            )
-
-                            artifacts.push({ type: 'png', data: path })
-                        } else if (key === 'jpeg') {
-                            //@ts-ignore
-                            const jpegData = Buffer.from(result.jpeg, 'base64')
-
-                            const filename = `artifact_${Date.now()}.jpg`
-
-                            const { path } = await addSingleFileToStorage(
-                                'image/jpg',
-                                jpegData,
-                                filename,
-                                this.orgId,
-                                this.chatflowid,
-                                flowConfig!.chatId as string
-                            )
-
-                            artifacts.push({ type: 'jpeg', data: path })
-                        } else if (key === 'html' || key === 'markdown' || key === 'latex' || key === 'json' || key === 'javascript') {
-                            artifacts.push({ type: key, data: (result as any)[key] })
-                        } //TODO: support for pdf
-                    }
-                }
-
-                // Download all files from /generated folder and add as artifacts (ignore files without extension)
-                try {
-                    const entries = await this.instance.files.list(GENERATED_DIR, { depth: 100 })
-                    const fileEntries = entries.filter((e) => {
-                        if (e.type !== 'file') return false
-                        const name = e.name
-                        const lastDot = name.lastIndexOf('.')
-                        return lastDot > 0 && lastDot < name.length - 1
-                    })
-                    for (const entry of fileEntries) {
-                        try {
-                            const content = await this.instance.files.read(entry.path, { format: 'bytes' })
-                            const buffer = Buffer.from(content as Uint8Array)
-                            const fileName = entry.name
-                            const mime = getMimeFromPath(entry.path)
-                            const { path: storagePath } = await addSingleFileToStorage(
-                                mime,
-                                buffer,
-                                fileName,
-                                this.orgId,
-                                this.chatflowid,
-                                flowConfig!.chatId as string
-                            )
-                            artifacts.push({ type: 'file', data: storagePath })
-                        } catch (readErr) {
-                            // Skip single file read errors (e.g. permission, deleted)
-                        }
-                    }
-                } catch {
-                    // /generated may not exist or list may fail; skip filesystem artifacts
-                }
-
-                // this.instance.close()
-
-                let output = ''
-
-                if (execution.text) output = execution.text
-                if (!execution.text && execution.logs.stdout.length) output = execution.logs.stdout.join('\n')
-
-                if (execution.error) {
-                    return `${execution.error.name}: ${execution.error.value}`
-                }
-
-                return artifacts.length > 0 ? output + ARTIFACTS_PREFIX + JSON.stringify(artifacts) : output
-            } else {
-                return 'No input provided'
             }
+
+            // Ensure /generated exists so code can save files there
+            await sandbox.files.makeDir(GENERATED_DIR).catch(() => {})
+
+            if (arg?.command) {
+                await sandbox.commands.run(arg?.command)
+            }
+
+            const execution = await sandbox.runCode(arg?.code, {
+                language: 'python',
+                timeoutMs: sandboxTimeoutMs,
+                requestTimeoutMs: sandboxTimeoutMs
+            })
+
+            const artifacts: Array<{ type: string; data: any }> = []
+            for (const result of execution.results) {
+                for (const key in result) {
+                    if (!(result as any)[key]) continue
+
+                    if (key === 'png') {
+                        //@ts-ignore
+                        const pngData = Buffer.from(result.png, 'base64')
+
+                        const filename = `artifact_${Date.now()}.png`
+
+                        // Don't check storage usage because this is incoming file, and if we throw error, agent will keep on retrying
+                        const { path } = await addSingleFileToStorage(
+                            'image/png',
+                            pngData,
+                            filename,
+                            this.orgId,
+                            this.chatflowid,
+                            flowConfig!.chatId as string
+                        )
+
+                        artifacts.push({ type: 'png', data: path })
+                    } else if (key === 'jpeg') {
+                        //@ts-ignore
+                        const jpegData = Buffer.from(result.jpeg, 'base64')
+
+                        const filename = `artifact_${Date.now()}.jpg`
+
+                        const { path } = await addSingleFileToStorage(
+                            'image/jpg',
+                            jpegData,
+                            filename,
+                            this.orgId,
+                            this.chatflowid,
+                            flowConfig!.chatId as string
+                        )
+
+                        artifacts.push({ type: 'jpeg', data: path })
+                    } else if (key === 'html' || key === 'markdown' || key === 'latex' || key === 'json' || key === 'javascript') {
+                        artifacts.push({ type: key, data: (result as any)[key] })
+                    } //TODO: support for pdf
+                }
+            }
+
+            // Download all files from /generated folder and add as artifacts (ignore files without extension)
+            try {
+                const entries = await sandbox.files.list(GENERATED_DIR, { depth: 100 })
+                const fileEntries = entries.filter((e) => {
+                    if (e.type !== 'file') return false
+                    const name = e.name
+                    const lastDot = name.lastIndexOf('.')
+                    return lastDot > 0 && lastDot < name.length - 1
+                })
+                for (const entry of fileEntries) {
+                    try {
+                        const content = await sandbox.files.read(entry.path, { format: 'bytes' })
+                        const buffer = Buffer.from(content as Uint8Array)
+                        const fileName = entry.name
+                        const mime = getMimeFromPath(entry.path)
+                        const { path: storagePath } = await addSingleFileToStorage(
+                            mime,
+                            buffer,
+                            fileName,
+                            this.orgId,
+                            this.chatflowid,
+                            flowConfig!.chatId as string
+                        )
+                        artifacts.push({ type: 'file', data: storagePath })
+                    } catch (readErr) {
+                        // Skip single file read errors (e.g. permission, deleted)
+                    }
+                }
+            } catch {
+                // /generated may not exist or list may fail; skip filesystem artifacts
+            }
+
+            let output = ''
+
+            if (execution.text) output = execution.text
+            if (!execution.text && execution.logs.stdout.length) output = execution.logs.stdout.join('\n')
+
+            if (execution.error) {
+                return `${execution.error.name}: ${execution.error.value}`
+            }
+
+            return artifacts.length > 0 ? output + ARTIFACTS_PREFIX + JSON.stringify(artifacts) : output
         } catch (e) {
-            // if (this.instance) this.instance.close()
-            //if (this.instance) this.instance.kill()
             return typeof e === 'string' ? e : JSON.stringify(e, null, 2)
+        } finally {
+            // Drop the local reference so the Sandbox JS wrapper (and any HTTP keepalive
+            // sockets it owns) becomes eligible for GC immediately. The remote sandbox is
+            // left running so it can be reconnected to via `sandboxId` on subsequent calls.
+            sandbox = undefined
         }
     }
 
