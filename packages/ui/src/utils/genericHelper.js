@@ -749,9 +749,11 @@ export const getUpsertDetails = (nodes, edges) => {
     return upsertNodes
 }
 
+export const getNodeInstanceVariable = (nodeId) => `{{${nodeId}.data.instance}}`
+
 export const rearrangeToolsOrdering = (newValues, sourceNodeId) => {
     // RequestsGet and RequestsPost have to be in order before other tools
-    newValues.push(`{{${sourceNodeId}.data.instance}}`)
+    newValues.push(getNodeInstanceVariable(sourceNodeId))
 
     const sortKey = (item) => {
         if (item.includes('requestsGet') || item.includes('readFile')) {
