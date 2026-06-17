@@ -513,6 +513,13 @@
             "name": "chatAnthropic",
             "models": [
                 {
+                    "label": "claude-opus-4-8",
+                    "name": "claude-opus-4-8",
+                    "description": "Claude 4.8 Opus",
+                    "input_cost": 0.000005,
+                    "output_cost": 0.000025
+                },
+                {
                     "label": "claude-opus-4-6",
                     "name": "claude-opus-4-6",
                     "description": "Claude 4.6 Opus",
@@ -656,6 +663,12 @@
             "name": "chatGoogleGenerativeAI",
             "models": [
                 {
+                    "label": "gemini-3.5-flash",
+                    "name": "gemini-3.5-flash",
+                    "input_cost": 0.0000015,
+                    "output_cost": 0.000009
+                },
+                {
                     "label": "gemini-3-pro-preview",
                     "name": "gemini-3-pro-preview",
                     "input_cost": 0.00002,
@@ -738,6 +751,12 @@
             "name": "chatGoogleVertexAI",
             "models": [
                 {
+                    "label": "gemini-3.5-flash",
+                    "name": "gemini-3.5-flash",
+                    "input_cost": 0.0000015,
+                    "output_cost": 0.000009
+                },
+                {
                     "label": "gemini-3-pro-preview",
                     "name": "gemini-3-pro-preview",
                     "input_cost": 0.00002,
@@ -808,6 +827,13 @@
                     "name": "gemini-1.0-pro-vision",
                     "input_cost": 1.25e-7,
                     "output_cost": 3.75e-7
+                },
+                {
+                    "label": "claude-opus-4-8",
+                    "name": "claude-opus-4-8",
+                    "description": "Claude 4.8 Opus",
+                    "input_cost": 0.000005,
+                    "output_cost": 0.000025
                 },
                 {
                     "label": "claude-opus-4-5@20251101",
@@ -1063,7 +1089,7 @@
             "models": [
                 {
                     "label": "gpt-5.4-mini",
-                    "name": "gpt-5.4",
+                    "name": "gpt-5.4-mini",
                     "input_cost": 0.00000075,
                     "output_cost": 0.0000045
                 },

@@ -45,6 +45,7 @@ import {
     getUniqueNodeId,
     initNode,
     rearrangeToolsOrdering,
+    getNodeInstanceVariable,
     getUpsertDetails,
     updateOutdatedNodeData,
     updateOutdatedNodeEdge
@@ -81,7 +82,7 @@ const Canvas = () => {
     const canvas = useSelector((state) => state.canvas)
     const [canvasDataStore, setCanvasDataStore] = useState(canvas)
     const [chatflow, setChatflow] = useState(null)
-    const { reactFlowInstance, setReactFlowInstance } = useContext(flowContext)
+    const { reactFlowInstance, setReactFlowInstance, cleanupConnectedInputsForEdge } = useContext(flowContext)
 
     // ==============================|| Snackbar ||============================== //
 
@@ -93,6 +94,18 @@ const Canvas = () => {
 
     const [nodes, setNodes, onNodesChange] = useNodesState()
     const [edges, setEdges, onEdgesChange] = useEdgesState()
+
+    const handleEdgesChange = useCallback(
+        (changes) => {
+            for (const change of changes) {
+                if (change.type === 'remove') {
+                    cleanupConnectedInputsForEdge(change.id)
+                }
+            }
+            onEdgesChange(changes)
+        },
+        [onEdgesChange, cleanupConnectedInputsForEdge]
+    )
 
     const [selectedNode, setSelectedNode] = useState(null)
     const [isUpsertButtonEnabled, setIsUpsertButtonEnabled] = useState(false)
@@ -140,13 +153,13 @@ const Canvas = () => {
                         if (targetInput === 'tools') {
                             rearrangeToolsOrdering(newValues, sourceNodeId)
                         } else {
-                            newValues.push(`{{${sourceNodeId}.data.instance}}`)
+                            newValues.push(getNodeInstanceVariable(sourceNodeId))
                         }
                         value = newValues
                     } else if (inputParam && inputParam.acceptVariable) {
                         value = node.data.inputs[targetInput] || ''
                     } else {
-                        value = `{{${sourceNodeId}.data.instance}}`
+                        value = getNodeInstanceVariable(sourceNodeId)
                     }
                     node.data = {
                         ...node.data,
@@ -588,7 +601,7 @@ const Canvas = () => {
                                 edges={edges}
                                 onNodesChange={onNodesChange}
                                 onNodeClick={onNodeClick}
-                                onEdgesChange={onEdgesChange}
+                                onEdgesChange={handleEdgesChange}
                                 onDrop={onDrop}
                                 onDragOver={onDragOver}
                                 onNodeDragStop={setDirty}

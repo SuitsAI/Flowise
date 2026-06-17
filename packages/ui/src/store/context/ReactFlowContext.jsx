@@ -1,7 +1,7 @@
 import { createContext, useState } from 'react'
 import { useDispatch } from 'react-redux'
 import PropTypes from 'prop-types'
-import { getUniqueNodeId, showHideInputParams } from '@/utils/genericHelper'
+import { getUniqueNodeId, getNodeInstanceVariable, showHideInputParams } from '@/utils/genericHelper'
 import { cloneDeep, isEqual } from 'lodash'
 import { SET_DIRTY } from '@/store/actions'
 
@@ -11,6 +11,7 @@ const initialValue = {
     duplicateNode: () => {},
     deleteNode: () => {},
     deleteEdge: () => {},
+    cleanupConnectedInputsForEdge: () => {},
     onNodeDataChange: () => {}
 }
 
@@ -129,10 +130,14 @@ export const ReactFlowContext = ({ children }) => {
         dispatch({ type: SET_DIRTY })
     }
 
-    const deleteEdge = (edgeid) => {
+    const cleanupConnectedInputsForEdge = (edgeid) => {
         deleteConnectedInput(edgeid, 'edge')
-        reactFlowInstance.setEdges(reactFlowInstance.getEdges().filter((edge) => edge.id !== edgeid))
         dispatch({ type: SET_DIRTY })
+    }
+
+    const deleteEdge = (edgeid) => {
+        cleanupConnectedInputsForEdge(edgeid)
+        reactFlowInstance.setEdges(reactFlowInstance.getEdges().filter((edge) => edge.id !== edgeid))
     }
 
     const deleteConnectedInput = (id, type) => {
@@ -155,9 +160,10 @@ export const ReactFlowContext = ({ children }) => {
 
                         if (inputAnchor && inputAnchor.list) {
                             const values = node.data.inputs[targetInput] || []
-                            value = values.filter((item) => !item.includes(sourceNodeId))
+                            const instanceRef = getNodeInstanceVariable(sourceNodeId)
+                            value = values.filter((item) => item !== instanceRef)
                         } else if (inputParam && inputParam.acceptVariable) {
-                            value = node.data.inputs[targetInput].replace(`{{${sourceNodeId}.data.instance}}`, '') || ''
+                            value = node.data.inputs[targetInput].replace(getNodeInstanceVariable(sourceNodeId), '') || ''
                         } else {
                             value = ''
                         }
@@ -251,6 +257,7 @@ export const ReactFlowContext = ({ children }) => {
                 setReactFlowInstance,
                 deleteNode,
                 deleteEdge,
+                cleanupConnectedInputsForEdge,
                 duplicateNode,
                 onAgentflowNodeStatusUpdate,
                 clearAgentflowNodeStatus,
