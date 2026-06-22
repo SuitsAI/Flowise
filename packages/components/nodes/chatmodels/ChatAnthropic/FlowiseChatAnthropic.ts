@@ -7,7 +7,7 @@ import { IVisionChatModal, IMultiModalOption } from '../../../src'
 
 const DEFAULT_IMAGE_MODEL = 'claude-3-5-haiku-latest'
 const DEFAULT_IMAGE_MAX_TOKEN = 2048
-const CACHE_CONTROL = { type: 'ephemeral' as const, ttl: '1h' as const }
+const CACHE_CONTROL = { type: 'ephemeral' as const, ttl: '5m' as const }
 /** Put this in your system prompt to mark the cache boundary: only the text *before* it is cached. Put dynamic content (e.g. date) *after* it. */
 const CACHE_BOUNDARY_MARKER = '\n---\n'
 /** Anthropic requires non-empty content for all messages (except optional final assistant). Use a single space to avoid 400. */
@@ -76,7 +76,25 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
             params['context_management'] = (this as any).contextManagement
         }
 
+        // Cache tool definitions: tools sit at the front of the prefix (tools -> system -> messages),
+        // so a breakpoint on the last tool caches the (usually large, static) tool schemas.
+        if (this.promptCaching) this._addCacheControlToTools(params)
+
         return params
+    }
+
+    /**
+     * Adds a cache_control breakpoint to the last tool definition so the whole tools block is cached.
+     * Anthropic evaluates the prefix in the order tools -> system -> messages, so this caches tools
+     * independently of the system prompt (tools stay cached even if the system prompt changes).
+     */
+    private _addCacheControlToTools(params: Record<string, unknown>): void {
+        const tools = params['tools']
+        if (!Array.isArray(tools) || tools.length === 0) return
+        const lastTool = tools[tools.length - 1]
+        if (lastTool && typeof lastTool === 'object') {
+            ;(lastTool as Record<string, unknown>).cache_control = CACHE_CONTROL
+        }
     }
 
     async _generate(
