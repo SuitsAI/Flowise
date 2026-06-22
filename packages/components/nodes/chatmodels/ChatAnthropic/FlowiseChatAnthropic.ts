@@ -70,6 +70,12 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
         // If a valid top_p is being sent, temperature must be omitted (mutually exclusive on newer models)
         if (typeof params['top_p'] === 'number') delete params['temperature']
 
+        // Langchain drops context_management from invocationParams when extended thinking is enabled.
+        // Re-add it so compaction still works when thinking and compaction are both turned on.
+        if (params['context_management'] === undefined && (this as any).contextManagement) {
+            params['context_management'] = (this as any).contextManagement
+        }
+
         return params
     }
 

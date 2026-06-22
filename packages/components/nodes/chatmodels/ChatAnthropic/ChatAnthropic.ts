@@ -6,6 +6,9 @@ import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../
 import { ChatAnthropic as FlowiseChatAnthropic } from './FlowiseChatAnthropic'
 import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
 
+/** Beta header required to enable server-side context compaction (compact_20260112 edit). */
+const COMPACTION_BETA = 'compact-2026-01-12'
+
 class ChatAnthropic_ChatModels implements INode {
     label: string
     name: string
@@ -202,12 +205,6 @@ class ChatAnthropic_ChatModels implements INode {
             streaming: streaming ?? true
         }
 
-        if (beta) obj.clientOptions = {
-            defaultHeaders: {
-                'anthropic-beta': beta
-            }
-        }
-
         if (maxTokens) obj.maxTokens = parseInt(maxTokens, 10)
         if (topP) obj.topP = parseFloat(topP)
         if (topK) obj.topK = parseFloat(topK)
@@ -220,6 +217,14 @@ class ChatAnthropic_ChatModels implements INode {
             delete obj.temperature
         }
 
+        // Collect anthropic-beta header values (comma-separated), de-duplicated
+        const betaValues = new Set<string>(
+            (beta ?? '')
+                .split(',')
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0)
+        )
+
         if (compaction) {
             const edit: Record<string, unknown> = { type: 'compact_20260112' }
             if (compactionTriggerTokens) {
@@ -227,6 +232,16 @@ class ChatAnthropic_ChatModels implements INode {
             }
             if (compactionInstructions) edit.instructions = compactionInstructions
             obj.contextManagement = { edits: [edit] } as unknown as AnthropicInput['contextManagement']
+            // Compaction requires the beta header; auto-add it so the toggle works without manual entry
+            betaValues.add(COMPACTION_BETA)
+        }
+
+        if (betaValues.size > 0) {
+            obj.clientOptions = {
+                defaultHeaders: {
+                    'anthropic-beta': Array.from(betaValues).join(',')
+                }
+            }
         }
 
         const multiModalOption: IMultiModalOption = {
