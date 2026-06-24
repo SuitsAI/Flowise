@@ -254,7 +254,7 @@ class ToolAgent_Agents implements INode {
 
         let outputForHistory = output;
         if(res.artifacts && res.artifacts.length > 0) {
-            outputForHistory += '\n\n' + res.artifacts.map((artifact: any) => `${nodeData.inputs?.baseURL}/api/v1/get-upload-file?chatflowId=${options.chatflowid}&chatId=${options.chatId}&fileName=${artifact.data.replace('FILE-STORAGE::', '')}`).join('\n')
+            outputForHistory += '\n\n' + res.artifacts.filter((z: any) => z.data).map((artifact: any) => `${nodeData.inputs?.baseURL}/api/v1/get-upload-file?chatflowId=${options.chatflowid}&chatId=${options.chatId}&fileName=${artifact.data.replace('FILE-STORAGE::', '')}`).join('\n')
 
             //${this.baseURL}/api/v1/get-upload-file?chatflowId=${this.chatflowid}&chatId=" + resp.chatId + "&fileName=" + artifact.data.replace('FILE-STORAGE::', '')
         }
