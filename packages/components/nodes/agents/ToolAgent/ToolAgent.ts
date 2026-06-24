@@ -182,6 +182,8 @@ class ToolAgent_Agents implements INode {
 
             const invokeConfig: ICommonObject = {
                 callbacks: allCallbacks,
+                // Propagate the chatflow AbortController's signal so aborting the conversation cancels the in-flight LLM request
+                signal: (options.signal as AbortController)?.signal,
                 metadata: {
                     conversationId,
                     userId,
@@ -229,6 +231,8 @@ class ToolAgent_Agents implements INode {
 
             const invokeConfig: ICommonObject = {
                 callbacks: allCallbacks,
+                // Propagate the chatflow AbortController's signal so aborting the conversation cancels the in-flight LLM request
+                signal: (options.signal as AbortController)?.signal,
                 metadata: {
                     conversationId,
                     userId,
