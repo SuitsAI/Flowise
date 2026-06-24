@@ -76,9 +76,20 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
             params['context_management'] = (this as any).contextManagement
         }
 
-        // Cache tool definitions: tools sit at the front of the prefix (tools -> system -> messages),
-        // so a breakpoint on the last tool caches the (usually large, static) tool schemas.
-        if (this.promptCaching) this._addCacheControlToTools(params)
+        if (this.promptCaching) {
+            // Explicit breakpoint on the tool definitions: tools sit at the front of the prefix
+            // (tools -> system -> messages), so a breakpoint on the last tool caches the (usually
+            // large, static) tool schemas as their own stable cache entry.
+            this._addCacheControlToTools(params)
+
+            // Automatic caching for the growing conversation (Anthropic's recommended approach):
+            // a single top-level cache_control lets the API place the conversation breakpoint on the
+            // last cacheable block and advance it as the conversation grows, using the 20-block
+            // lookback to hit the previous turn's cache. Combined with the explicit tools + system
+            // breakpoints, this is the documented "explicit static prefix + automatic conversation" pattern.
+            // Passed straight through to messages.create() as a top-level body field.
+            if (params['cache_control'] === undefined) params['cache_control'] = CACHE_CONTROL
+        }
 
         return params
     }
@@ -137,17 +148,13 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
         const hasCacheControlOnSystem =
             Array.isArray(systemContent) &&
             (systemContent as any[]).some((b: any) => b?.cache_control?.type === 'ephemeral')
-        const lastMsg = modifiedMessages[modifiedMessages.length - 1]
-        const lastContent = lastMsg?.content
-        const hasCacheControlOnLast =
-            Array.isArray(lastContent) && (lastContent as any[]).some((b: any) => b?.cache_control?.type === 'ephemeral')
         const gen = result.generations?.[0]?.message as any
         const usage = gen?.response_metadata?.usage ?? gen?.usage_metadata
         const cacheRead = usage?.cache_read_input_tokens ?? usage?.input_token_details?.cache_read ?? 0
         const cacheCreation = usage?.cache_creation_input_tokens ?? usage?.input_token_details?.cache_creation ?? 0
         const payload = {
             cache_control_on_system: hasCacheControlOnSystem,
-            cache_control_on_last_message: hasCacheControlOnLast,
+            automatic_conversation_caching: true,
             response_has_usage: !!usage,
             response_has_response_metadata_usage: !!(gen?.response_metadata?.usage),
             cache_read_input_tokens: cacheRead,
@@ -202,8 +209,9 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
     /**
      * Injects cache_control breakpoints into messages for Anthropic prompt caching.
      * - Normalizes empty message content so Anthropic never receives empty content (avoids 400).
-     * - System message: cache_control on the *first* content block only.
-     * - Last message: cache_control on the last block (caches conversation history up to that point).
+     * - System message: cache_control on the *first* content block only (explicit static-prefix breakpoint).
+     * The growing conversation is cached via automatic caching (top-level cache_control in invocationParams),
+     * not by marking the last message here. Tool definitions get their own explicit breakpoint in invocationParams.
      */
     private _injectCacheControl(messages: BaseMessage[]): BaseMessage[] {
         if (messages.length === 0) return messages
@@ -220,18 +228,16 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
         // Anthropic: "all messages must have non-empty content except for the optional final assistant message"
         this._normalizeEmptyContent(cloned)
 
-        // 1. System message: cache only the first block so dynamic content (e.g. Date.now()) in later blocks doesn't invalidate the cache
+        // System message: explicit breakpoint on the first block only, so dynamic content (e.g. Date.now())
+        // in later blocks doesn't invalidate the cache. Keeping an explicit breakpoint on the system prompt
+        // (per Anthropic's guidance) ensures the stable prefix is re-cached on the next request if it gets
+        // evicted after the TTL lapses. The growing conversation itself is handled by automatic caching
+        // (top-level cache_control set in invocationParams), so we do NOT mark the last message here.
         for (let i = cloned.length - 1; i >= 0; i--) {
             if (cloned[i]._getType() === 'system') {
                 this._addCacheControlToSystemMessage(cloned[i])
                 break
             }
-        }
-
-        // 2. Add cache_control to the last message (caches conversation history)
-        const lastMessage = cloned[cloned.length - 1]
-        if (lastMessage._getType() !== 'system') {
-            this._addCacheControlToLastMessage(lastMessage)
         }
 
         return cloned
@@ -295,19 +301,6 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
             const first = message.content[0] as any
             if (first?.type === 'text' && typeof first.text === 'string') first.text = this._nonEmptyText(first.text)
             ;(message.content[0] as any).cache_control = CACHE_CONTROL
-        }
-    }
-
-    /** Adds cache_control to the last content block (caches conversation history up to that point). */
-    private _addCacheControlToLastMessage(message: BaseMessage): void {
-        if (typeof message.content === 'string') {
-            message.content = [
-                { type: 'text', text: this._nonEmptyText(message.content), cache_control: CACHE_CONTROL } as MessageContentComplex
-            ]
-        } else if (Array.isArray(message.content) && message.content.length > 0) {
-            const lastBlock = message.content[message.content.length - 1] as any
-            if (lastBlock?.type === 'text' && typeof lastBlock.text === 'string') lastBlock.text = this._nonEmptyText(lastBlock.text)
-            lastBlock.cache_control = CACHE_CONTROL
         }
     }
 
