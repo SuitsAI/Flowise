@@ -6,9 +6,6 @@ import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../
 import { ChatAnthropic as FlowiseChatAnthropic } from './FlowiseChatAnthropic'
 import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
 
-/** Beta header required to enable server-side context compaction (compact_20260112 edit). */
-const COMPACTION_BETA = 'compact-2026-01-12'
-
 class ChatAnthropic_ChatModels implements INode {
     label: string
     name: string
@@ -24,7 +21,7 @@ class ChatAnthropic_ChatModels implements INode {
     constructor() {
         this.label = 'ChatAnthropic'
         this.name = 'chatAnthropic'
-        this.version = 9.1
+        this.version = 9.2
         this.type = 'ChatAnthropic'
         this.icon = 'Anthropic.svg'
         this.category = 'Chat Models'
@@ -114,10 +111,23 @@ class ChatAnthropic_ChatModels implements INode {
                 name: 'promptCaching',
                 type: 'boolean',
                 description:
-                    'Enable <a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" target="_blank">Anthropic Prompt Caching</a> to reduce costs and latency by caching system prompts and conversation history. Cached input tokens are billed at 10% of base price. Minimum cacheable length varies by model (1024-4096 tokens). If your system prompt includes dynamic content (e.g. current date), put a line with exactly "---" (three dashes) between the static part and the dynamic part: only the text before "---" is cached, so the cache can hit.',
+                    'Enable <a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" target="_blank">Anthropic Prompt Caching</a> to reduce costs and latency by caching tool definitions and system prompts. Cached input tokens are billed at 10% of base price. Minimum cacheable length varies by model (1024-4096 tokens). If your system prompt includes dynamic content (e.g. current date), put a line with exactly "---" (three dashes) between the static part and the dynamic part: only the text before "---" is cached, so the cache can hit.',
                 default: false,
                 optional: true,
                 additionalParams: true
+            },
+            {
+                label: 'Cache Conversation History',
+                name: 'cacheConversationHistory',
+                type: 'boolean',
+                description:
+                    'When Prompt Caching is enabled, also cache the growing conversation history using Anthropic automatic caching (a top-level cache breakpoint that advances each turn). Turn off to cache only the static prefix (tool definitions + system prompt). Only applies when Prompt Caching is enabled.',
+                default: true,
+                optional: true,
+                additionalParams: true,
+                show: {
+                    promptCaching: true
+                }
             },
             {
                 label: 'Allow Image Uploads',
@@ -133,37 +143,7 @@ class ChatAnthropic_ChatModels implements INode {
                 name: 'beta',
                 type: 'string',
                 description:
-                    'Beta parameter for experimental features (e.g. <code>compact-2026-01-12</code> when enabling Compaction below). Multiple values can be comma-separated.',
-                optional: true,
-                additionalParams: true
-            },
-            {
-                label: 'Compaction',
-                name: 'compaction',
-                type: 'boolean',
-                description:
-                    'Enable <a href="https://platform.claude.com/docs/en/build-with-claude/compaction" target="_blank">server-side context compaction</a> to extend long conversations. Requires the <code>compact-2026-01-12</code> beta header (set in the Beta field above) and a supported model (Claude Opus 4.6+, Sonnet 4.6+).',
-                default: false,
-                optional: true,
-                additionalParams: true
-            },
-            {
-                label: 'Compaction Trigger Tokens',
-                name: 'compactionTriggerTokens',
-                type: 'number',
-                step: 1000,
-                description:
-                    'Input token threshold that triggers compaction. Defaults to 150,000 if left empty. Must be at least 50,000.',
-                optional: true,
-                additionalParams: true
-            },
-            {
-                label: 'Compaction Instructions',
-                name: 'compactionInstructions',
-                type: 'string',
-                rows: 4,
-                description:
-                    'Custom summarization prompt used when compaction triggers. Completely replaces the default prompt when provided.',
+                    'Anthropic beta header value(s) for experimental features (passed as the <code>anthropic-beta</code> header). Multiple values can be comma-separated.',
                 optional: true,
                 additionalParams: true
             }
@@ -189,9 +169,7 @@ class ChatAnthropic_ChatModels implements INode {
         const budgetTokens = nodeData.inputs?.budgetTokens as string
         const beta = nodeData.inputs?.beta as string
         const promptCaching = nodeData.inputs?.promptCaching as boolean
-        const compaction = nodeData.inputs?.compaction as boolean
-        const compactionTriggerTokens = nodeData.inputs?.compactionTriggerTokens as string
-        const compactionInstructions = nodeData.inputs?.compactionInstructions as string
+        const cacheConversationHistory = nodeData.inputs?.cacheConversationHistory as boolean
 
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const anthropicApiKey = getCredentialParam('anthropicApiKey', credentialData, nodeData)
@@ -225,17 +203,6 @@ class ChatAnthropic_ChatModels implements INode {
                 .filter((value) => value.length > 0)
         )
 
-        if (compaction) {
-            const edit: Record<string, unknown> = { type: 'compact_20260112' }
-            if (compactionTriggerTokens) {
-                edit.trigger = { type: 'input_tokens', value: parseInt(compactionTriggerTokens, 10) }
-            }
-            if (compactionInstructions) edit.instructions = compactionInstructions
-            obj.contextManagement = { edits: [edit] } as unknown as AnthropicInput['contextManagement']
-            // Compaction requires the beta header; auto-add it so the toggle works without manual entry
-            betaValues.add(COMPACTION_BETA)
-        }
-
         if (betaValues.size > 0) {
             obj.clientOptions = {
                 defaultHeaders: {
@@ -251,7 +218,9 @@ class ChatAnthropic_ChatModels implements INode {
         }
 
         const promptCachingEnabled = promptCaching ?? false
-        const model = new FlowiseChatAnthropic(nodeData.id, obj, promptCachingEnabled)
+        // Default to true so existing flows (saved before this option existed) keep automatic conversation caching
+        const cacheConversationHistoryEnabled = cacheConversationHistory ?? true
+        const model = new FlowiseChatAnthropic(nodeData.id, obj, promptCachingEnabled, cacheConversationHistoryEnabled)
         model.setMultiModalOption(multiModalOption)
         return model
     }

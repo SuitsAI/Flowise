@@ -19,14 +19,21 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
     multiModalOption: IMultiModalOption
     id: string
     promptCaching: boolean
+    automaticConversationCaching: boolean
 
-    constructor(id: string, fields?: Partial<AnthropicInput> & BaseChatModelParams, promptCaching?: boolean) {
+    constructor(
+        id: string,
+        fields?: Partial<AnthropicInput> & BaseChatModelParams,
+        promptCaching?: boolean,
+        automaticConversationCaching?: boolean
+    ) {
         // @ts-ignore
         super(fields ?? {})
         this.id = id
         this.configuredModel = fields?.modelName || ''
         this.configuredMaxToken = fields?.maxTokens ?? 2048
         this.promptCaching = promptCaching ?? false
+        this.automaticConversationCaching = automaticConversationCaching ?? true
     }
 
     revertToOriginalModel(): void {
@@ -70,12 +77,6 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
         // If a valid top_p is being sent, temperature must be omitted (mutually exclusive on newer models)
         if (typeof params['top_p'] === 'number') delete params['temperature']
 
-        // Langchain drops context_management from invocationParams when extended thinking is enabled.
-        // Re-add it so compaction still works when thinking and compaction are both turned on.
-        if (params['context_management'] === undefined && (this as any).contextManagement) {
-            params['context_management'] = (this as any).contextManagement
-        }
-
         if (this.promptCaching) {
             // Explicit breakpoint on the tool definitions: tools sit at the front of the prefix
             // (tools -> system -> messages), so a breakpoint on the last tool caches the (usually
@@ -88,7 +89,11 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
             // lookback to hit the previous turn's cache. Combined with the explicit tools + system
             // breakpoints, this is the documented "explicit static prefix + automatic conversation" pattern.
             // Passed straight through to messages.create() as a top-level body field.
-            if (params['cache_control'] === undefined) params['cache_control'] = CACHE_CONTROL
+            // Gated by the node's "Cache Conversation History" toggle; when off, only the static
+            // prefix (tools + system) is cached and conversation tokens are billed at full input price.
+            if (this.automaticConversationCaching && params['cache_control'] === undefined) {
+                params['cache_control'] = CACHE_CONTROL
+            }
         }
 
         return params
@@ -154,7 +159,7 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
         const cacheCreation = usage?.cache_creation_input_tokens ?? usage?.input_token_details?.cache_creation ?? 0
         const payload = {
             cache_control_on_system: hasCacheControlOnSystem,
-            automatic_conversation_caching: true,
+            automatic_conversation_caching: this.automaticConversationCaching,
             response_has_usage: !!usage,
             response_has_response_metadata_usage: !!(gen?.response_metadata?.usage),
             cache_read_input_tokens: cacheRead,
