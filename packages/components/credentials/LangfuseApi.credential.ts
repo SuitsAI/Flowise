@@ -30,7 +30,7 @@ class LangfuseApi implements INodeCredential {
                 label: 'Endpoint',
                 name: 'langFuseEndpoint',
                 type: 'string',
-                default: 'https://cloud.langfuse.com'
+                default: 'https://us.cloud.langfuse.com'
             }
         ]
     }

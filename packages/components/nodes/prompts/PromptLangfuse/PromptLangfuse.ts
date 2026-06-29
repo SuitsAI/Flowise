@@ -59,7 +59,7 @@ class PromptLangfuse_Prompts implements INode {
         const langfuse = new Langfuse({
             secretKey: langFuseSecretKey,
             publicKey: langFusePublicKey,
-            baseUrl: langFuseEndpoint ?? 'https://cloud.langfuse.com',
+            baseUrl: langFuseEndpoint ?? 'https://us.cloud.langfuse.com',
             sdkIntegration: 'Flowise'
         })
 
