@@ -2,18 +2,19 @@ import { Logger } from 'winston'
 import { URL } from 'url'
 import { v4 as uuidv4 } from 'uuid'
 import { Client } from 'langsmith'
-import CallbackHandler from 'langfuse-langchain'
+import { CallbackHandler } from '@langfuse/langchain'
+import { LangfuseSpanProcessor } from '@langfuse/otel'
+import { startObservation, LangfuseSpan, LangfuseGeneration } from '@langfuse/tracing'
 import lunary from 'lunary'
 import { RunTree, RunTreeConfig, Client as LangsmithClient } from 'langsmith'
-import { Langfuse, LangfuseTraceClient, LangfuseSpanClient, LangfuseGenerationClient } from 'langfuse'
 import { LangChainInstrumentation } from '@arizeai/openinference-instrumentation-langchain'
 import { Metadata } from '@grpc/grpc-js'
-import opentelemetry, { Span, SpanStatusCode } from '@opentelemetry/api'
+import opentelemetry, { Span, SpanStatusCode, Tracer } from '@opentelemetry/api'
 import { OTLPTraceExporter as GrpcOTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc'
 import { OTLPTraceExporter as ProtoOTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto'
 import { registerInstrumentations } from '@opentelemetry/instrumentation'
-import { Resource } from '@opentelemetry/resources'
-import { SimpleSpanProcessor, Tracer } from '@opentelemetry/sdk-trace-base'
+import { resourceFromAttributes } from '@opentelemetry/resources'
+import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions'
 
@@ -40,6 +41,50 @@ export interface AgentRun extends Run {
     actions: AgentAction[]
 }
 
+/*
+ * Langfuse JS SDK v5 is built on OpenTelemetry: credentials live on a single global
+ * LangfuseSpanProcessor (registered once on a NodeTracerProvider), not per CallbackHandler.
+ * We lazily register that processor the first time a chatflow enables Langfuse, seeding the
+ * credentials from that chatflow's stored credential (or the LANGFUSE_* env vars). As a result
+ * all Langfuse traces are exported to a single Langfuse project per server process.
+ */
+let langfuseTracingInitialized = false
+let langfuseSpanProcessor: LangfuseSpanProcessor | undefined
+
+interface LangfuseTracingConfig {
+    secretKey?: string
+    publicKey?: string
+    baseUrl?: string
+    release?: string
+}
+
+export function initializeLangfuseTracing(config: LangfuseTracingConfig): void {
+    if (langfuseTracingInitialized) return
+    try {
+        langfuseSpanProcessor = new LangfuseSpanProcessor({
+            publicKey: config.publicKey ?? process.env.LANGFUSE_PUBLIC_KEY,
+            secretKey: config.secretKey ?? process.env.LANGFUSE_SECRET_KEY,
+            baseUrl: config.baseUrl ?? process.env.LANGFUSE_BASE_URL ?? 'https://us.cloud.langfuse.com',
+            release: config.release ?? process.env.LANGFUSE_RELEASE
+        })
+        const tracerProvider = new NodeTracerProvider({
+            spanProcessors: [langfuseSpanProcessor]
+        })
+        tracerProvider.register()
+        langfuseTracingInitialized = true
+    } catch (err) {
+        if (process.env.DEBUG === 'true') console.error(`Error setting up Langfuse tracing: ${(err as Error).message}`)
+    }
+}
+
+export async function flushLangfuseTracing(): Promise<void> {
+    try {
+        await langfuseSpanProcessor?.forceFlush()
+    } catch (err) {
+        if (process.env.DEBUG === 'true') console.error(`Error flushing Langfuse tracing: ${(err as Error).message}`)
+    }
+}
+
 interface ArizeTracerOptions {
     apiKey: string
     spaceId: string
@@ -61,14 +106,14 @@ function getArizeTracer(options: ArizeTracerOptions): Tracer | undefined {
             metadata
         })
         const tracerProvider = new NodeTracerProvider({
-            resource: new Resource({
+            resource: resourceFromAttributes({
                 [ATTR_SERVICE_NAME]: options.projectName,
                 [ATTR_SERVICE_VERSION]: '1.0.0',
                 [SEMRESATTRS_PROJECT_NAME]: options.projectName,
                 model_id: options.projectName
-            })
+            }),
+            spanProcessors: [new SimpleSpanProcessor(traceExporter)]
         })
-        tracerProvider.addSpanProcessor(new SimpleSpanProcessor(traceExporter))
         if (options.enableCallback) {
             registerInstrumentations({
                 instrumentations: []
@@ -116,13 +161,13 @@ export function getPhoenixTracer(options: PhoenixTracerOptions): Tracer | undefi
             headers: exporterHeaders
         })
         const tracerProvider = new NodeTracerProvider({
-            resource: new Resource({
+            resource: resourceFromAttributes({
                 [ATTR_SERVICE_NAME]: options.projectName,
                 [ATTR_SERVICE_VERSION]: '1.0.0',
                 [SEMRESATTRS_PROJECT_NAME]: options.projectName
-            })
+            }),
+            spanProcessors: [new SimpleSpanProcessor(traceExporter)]
         })
-        tracerProvider.addSpanProcessor(new SimpleSpanProcessor(traceExporter))
         if (options.enableCallback) {
             registerInstrumentations({
                 instrumentations: []
@@ -160,13 +205,13 @@ function getOpikTracer(options: OpikTracerOptions): Tracer | undefined {
             }
         })
         const tracerProvider = new NodeTracerProvider({
-            resource: new Resource({
+            resource: resourceFromAttributes({
                 [ATTR_SERVICE_NAME]: options.projectName,
                 [ATTR_SERVICE_VERSION]: '1.0.0',
                 [SEMRESATTRS_PROJECT_NAME]: options.projectName
-            })
+            }),
+            spanProcessors: [new SimpleSpanProcessor(traceExporter)]
         })
-        tracerProvider.addSpanProcessor(new SimpleSpanProcessor(traceExporter))
         if (options.enableCallback) {
             registerInstrumentations({
                 instrumentations: []
@@ -564,13 +609,16 @@ export const additionalCallbacks = async (nodeData: INodeData, options: ICommonO
                     const langFusePublicKey = getCredentialParam('langFusePublicKey', credentialData, nodeData)
                     const langFuseEndpoint = getCredentialParam('langFuseEndpoint', credentialData, nodeData)
 
-                    let langFuseOptions: any = {
+                    // v5: credentials are configured once on the global LangfuseSpanProcessor
+                    initializeLangfuseTracing({
                         secretKey: langFuseSecretKey,
                         publicKey: langFusePublicKey,
-                        baseUrl: langFuseEndpoint ?? 'https://cloud.langfuse.com',
-                        sdkIntegration: 'Flowise'
-                    }
-                    if (release) langFuseOptions.release = release
+                        baseUrl: langFuseEndpoint ?? 'https://us.cloud.langfuse.com',
+                        release
+                    })
+
+                    // v5 CallbackHandler only carries trace-level correlation attributes (no credentials)
+                    let langFuseOptions: any = {}
                     if (options.chatId) langFuseOptions.sessionId = options.chatId
 
                     if (nodeData?.inputs?.analytics?.langFuse) {
@@ -789,14 +837,14 @@ export class AnalyticHandler {
             const langFusePublicKey = getCredentialParam('langFusePublicKey', credentialData, this.nodeData)
             const langFuseEndpoint = getCredentialParam('langFuseEndpoint', credentialData, this.nodeData)
 
-            const langfuse = new Langfuse({
+            // v5: credentials are configured once on the global LangfuseSpanProcessor
+            initializeLangfuseTracing({
                 secretKey: langFuseSecretKey,
                 publicKey: langFusePublicKey,
-                baseUrl: langFuseEndpoint ?? 'https://cloud.langfuse.com',
-                sdkIntegration: 'Flowise',
+                baseUrl: langFuseEndpoint ?? 'https://us.cloud.langfuse.com',
                 release
             })
-            this.handlers['langFuse'] = { client: langfuse }
+            this.handlers['langFuse'] = { trace: {}, span: {}, generation: {}, toolSpan: {} }
         } else if (provider === 'lunary') {
             const lunaryPublicKey = getCredentialParam('lunaryAppId', credentialData, this.nodeData)
             const lunaryEndpoint = getCredentialParam('lunaryEndpoint', credentialData, this.nodeData)
@@ -922,35 +970,28 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            let langfuseTraceClient: LangfuseTraceClient
+            let rootSpan: LangfuseSpan | undefined
 
             if (!parentIds || !Object.keys(parentIds).length) {
-                const langfuse: Langfuse = this.handlers['langFuse'].client
-                langfuseTraceClient = langfuse.trace({
+                rootSpan = startObservation(
                     name,
-                    sessionId: this.options.chatId,
-                    metadata: { tags: ['openai-assistant'] },
-                    ...this.nodeData?.inputs?.analytics?.langFuse
-                })
+                    {
+                        input: { text: input },
+                        metadata: { sessionId: this.options.chatId, tags: ['openai-assistant'] },
+                        ...this.nodeData?.inputs?.analytics?.langFuse
+                    },
+                    { asType: 'span' }
+                )
+                if (this.options.chatId) rootSpan.setTraceIO({ input: { text: input } })
             } else {
-                langfuseTraceClient = this.handlers['langFuse'].trace[parentIds['langFuse']]
+                rootSpan = this.handlers['langFuse'].trace[parentIds['langFuse'].trace]
             }
 
-            if (langfuseTraceClient) {
-                langfuseTraceClient.update({
-                    input: {
-                        text: input
-                    }
-                })
-                const span = langfuseTraceClient.span({
-                    name,
-                    input: {
-                        text: input
-                    }
-                })
-                this.handlers['langFuse'].trace = { [langfuseTraceClient.id]: langfuseTraceClient }
-                this.handlers['langFuse'].span = { [span.id]: span }
-                returnIds['langFuse'].trace = langfuseTraceClient.id
+            if (rootSpan) {
+                const span = rootSpan.startObservation(name, { input: { text: input } }, { asType: 'span' })
+                this.handlers['langFuse'].trace[rootSpan.id] = rootSpan
+                this.handlers['langFuse'].span[span.id] = span
+                returnIds['langFuse'].trace = rootSpan.id
                 returnIds['langFuse'].span = span.id
             }
         }
@@ -1117,22 +1158,18 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            const span: LangfuseSpanClient | undefined = this.handlers['langFuse'].span[returnIds['langFuse'].span]
+            const span: LangfuseSpan | undefined = this.handlers['langFuse'].span[returnIds['langFuse'].span]
             if (span) {
-                span.end({
-                    output
-                })
-                const langfuseTraceClient = this.handlers['langFuse'].trace[returnIds['langFuse'].trace]
-                if (langfuseTraceClient) {
-                    langfuseTraceClient.update({
-                        output: {
-                            output
-                        }
-                    })
+                span.update({ output })
+                span.end()
+                const rootSpan: LangfuseSpan | undefined = this.handlers['langFuse'].trace[returnIds['langFuse'].trace]
+                if (rootSpan) {
+                    rootSpan.update({ output: { output } })
+                    rootSpan.setTraceIO({ output: { output } })
+                    rootSpan.end()
                 }
                 if (shutdown) {
-                    const langfuse: Langfuse = this.handlers['langFuse'].client
-                    await langfuse.shutdownAsync()
+                    await flushLangfuseTracing()
                 }
             }
         }
@@ -1208,24 +1245,18 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            const span: LangfuseSpanClient | undefined = this.handlers['langFuse'].span[returnIds['langFuse'].span]
+            const span: LangfuseSpan | undefined = this.handlers['langFuse'].span[returnIds['langFuse'].span]
             if (span) {
-                span.end({
-                    output: {
-                        error
-                    }
-                })
-                const langfuseTraceClient = this.handlers['langFuse'].trace[returnIds['langFuse'].trace]
-                if (langfuseTraceClient) {
-                    langfuseTraceClient.update({
-                        output: {
-                            error
-                        }
-                    })
+                span.update({ output: { error }, level: 'ERROR' })
+                span.end()
+                const rootSpan: LangfuseSpan | undefined = this.handlers['langFuse'].trace[returnIds['langFuse'].trace]
+                if (rootSpan) {
+                    rootSpan.update({ output: { error }, level: 'ERROR' })
+                    rootSpan.setTraceIO({ output: { error } })
+                    rootSpan.end()
                 }
                 if (shutdown) {
-                    const langfuse: Langfuse = this.handlers['langFuse'].client
-                    await langfuse.shutdownAsync()
+                    await flushLangfuseTracing()
                 }
             }
         }
@@ -1309,13 +1340,10 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            const trace: LangfuseTraceClient | undefined = this.handlers['langFuse'].trace[parentIds['langFuse'].trace]
-            if (trace) {
-                const generation = trace.generation({
-                    name,
-                    input: input
-                })
-                this.handlers['langFuse'].generation = { [generation.id]: generation }
+            const rootSpan: LangfuseSpan | undefined = this.handlers['langFuse'].trace[parentIds['langFuse'].trace]
+            if (rootSpan) {
+                const generation = rootSpan.startObservation(name, { input }, { asType: 'generation' })
+                this.handlers['langFuse'].generation[generation.id] = generation
                 returnIds['langFuse'].generation = generation.id
             }
         }
@@ -1423,11 +1451,10 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            const generation: LangfuseGenerationClient | undefined = this.handlers['langFuse'].generation[returnIds['langFuse'].generation]
+            const generation: LangfuseGeneration | undefined = this.handlers['langFuse'].generation[returnIds['langFuse'].generation]
             if (generation) {
-                generation.end({
-                    output: output
-                })
+                generation.update({ output })
+                generation.end()
             }
         }
 
@@ -1497,11 +1524,10 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            const generation: LangfuseGenerationClient | undefined = this.handlers['langFuse'].generation[returnIds['langFuse'].generation]
+            const generation: LangfuseGeneration | undefined = this.handlers['langFuse'].generation[returnIds['langFuse'].generation]
             if (generation) {
-                generation.end({
-                    output: error
-                })
+                generation.update({ output: error, level: 'ERROR' })
+                generation.end()
             }
         }
 
@@ -1585,13 +1611,10 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            const trace: LangfuseTraceClient | undefined = this.handlers['langFuse'].trace[parentIds['langFuse'].trace]
-            if (trace) {
-                const toolSpan = trace.span({
-                    name,
-                    input
-                })
-                this.handlers['langFuse'].toolSpan = { [toolSpan.id]: toolSpan }
+            const rootSpan: LangfuseSpan | undefined = this.handlers['langFuse'].trace[parentIds['langFuse'].trace]
+            if (rootSpan) {
+                const toolSpan = rootSpan.startObservation(name, { input }, { asType: 'tool' })
+                this.handlers['langFuse'].toolSpan[toolSpan.id] = toolSpan
                 returnIds['langFuse'].toolSpan = toolSpan.id
             }
         }
@@ -1700,11 +1723,10 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            const toolSpan: LangfuseSpanClient | undefined = this.handlers['langFuse'].toolSpan[returnIds['langFuse'].toolSpan]
+            const toolSpan: LangfuseSpan | undefined = this.handlers['langFuse'].toolSpan[returnIds['langFuse'].toolSpan]
             if (toolSpan) {
-                toolSpan.end({
-                    output
-                })
+                toolSpan.update({ output })
+                toolSpan.end()
             }
         }
 
@@ -1774,11 +1796,10 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            const toolSpan: LangfuseSpanClient | undefined = this.handlers['langFuse'].toolSpan[returnIds['langFuse'].toolSpan]
+            const toolSpan: LangfuseSpan | undefined = this.handlers['langFuse'].toolSpan[returnIds['langFuse'].toolSpan]
             if (toolSpan) {
-                toolSpan.end({
-                    output: error
-                })
+                toolSpan.update({ output: error, level: 'ERROR' })
+                toolSpan.end()
             }
         }
 

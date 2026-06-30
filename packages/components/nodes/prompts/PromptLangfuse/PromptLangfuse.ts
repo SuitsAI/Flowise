@@ -1,7 +1,7 @@
 import { ICommonObject, INode, INodeData, INodeParams, PromptTemplate } from '../../../src/Interface'
 import { getBaseClasses, getCredentialData, getCredentialParam, getInputVariables, transformBracesWithColon } from '../../../src/utils'
 import { PromptTemplateInput } from '@langchain/core/prompts'
-import { Langfuse } from 'langfuse'
+import { LangfuseClient } from '@langfuse/client'
 
 class PromptLangfuse_Prompts implements INode {
     label: string
@@ -56,14 +56,13 @@ class PromptLangfuse_Prompts implements INode {
         const langFusePublicKey = getCredentialParam('langFusePublicKey', credentialData, nodeData)
         const langFuseEndpoint = getCredentialParam('langFuseEndpoint', credentialData, nodeData)
 
-        const langfuse = new Langfuse({
+        const langfuse = new LangfuseClient({
             secretKey: langFuseSecretKey,
             publicKey: langFusePublicKey,
-            baseUrl: langFuseEndpoint ?? 'https://cloud.langfuse.com',
-            sdkIntegration: 'Flowise'
+            baseUrl: langFuseEndpoint ?? 'https://us.cloud.langfuse.com'
         })
 
-        const langfusePrompt = await langfuse.getPrompt(nodeData.inputs?.template as string)
+        const langfusePrompt = await langfuse.prompt.get(nodeData.inputs?.template as string)
         let template = langfusePrompt.getLangchainPrompt()
 
         const promptValuesStr = nodeData.inputs?.promptValues
