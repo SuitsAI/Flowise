@@ -26,13 +26,18 @@ export function stripSamplingParams(params: Record<string, unknown>): void {
 
 export type AnthropicThinkingConfig =
     | { type: 'enabled'; budget_tokens: number }
-    | { type: 'adaptive' }
+    | { type: 'adaptive'; display: 'summarized' }
     | { type: 'disabled' }
 
 /** Build the `thinking` payload for a model + Extended Thinking toggle. */
 export function buildThinkingConfig(modelName: string, extendedThinking: boolean, budgetTokens: string): AnthropicThinkingConfig | undefined {
     if (requiresAdaptiveThinkingApi(modelName)) {
-        return { type: extendedThinking ? 'adaptive' : 'disabled' }
+        if (extendedThinking) {
+            // Sonnet 5 / Opus 4.7+ default to display:"omitted" (no readable thinking in stream).
+            // Flowise Extended Thinking toggle expects llmReasoning SSE — opt in to summarized text.
+            return { type: 'adaptive', display: 'summarized' }
+        }
+        return { type: 'disabled' }
     }
     if (!extendedThinking) return undefined
     return {

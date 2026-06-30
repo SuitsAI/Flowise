@@ -29,7 +29,10 @@ describe('anthropicModelCompat', () => {
 
     describe('buildThinkingConfig', () => {
         it('uses adaptive/disabled for Sonnet 5', () => {
-            expect(buildThinkingConfig('claude-sonnet-5', true, '1024')).toEqual({ type: 'adaptive' })
+            expect(buildThinkingConfig('claude-sonnet-5', true, '1024')).toEqual({
+                type: 'adaptive',
+                display: 'summarized'
+            })
             expect(buildThinkingConfig('claude-sonnet-5', false, '1024')).toEqual({ type: 'disabled' })
         })
 
