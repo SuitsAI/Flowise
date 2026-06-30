@@ -4,6 +4,13 @@
             "name": "awsChatBedrock",
             "models": [
                 {
+                    "label": "anthropic.claude-sonnet-5",
+                    "name": "anthropic.claude-sonnet-5",
+                    "description": "Claude Sonnet 5",
+                    "input_cost": 0.000002,
+                    "output_cost": 0.00001
+                },
+                {
                     "label": "anthropic.claude-opus-4-5-20251101-v1:0",
                     "name": "anthropic.claude-opus-4-5-20251101-v1:0",
                     "description": "Claude 4.5 Opus",
@@ -513,6 +520,13 @@
             "name": "chatAnthropic",
             "models": [
                 {
+                    "label": "claude-sonnet-5",
+                    "name": "claude-sonnet-5",
+                    "description": "Claude Sonnet 5",
+                    "input_cost": 0.000002,
+                    "output_cost": 0.00001
+                },
+                {
                     "label": "claude-opus-4-8",
                     "name": "claude-opus-4-8",
                     "description": "Claude 4.8 Opus",
@@ -834,6 +848,13 @@
                     "description": "Claude 4.8 Opus",
                     "input_cost": 0.000005,
                     "output_cost": 0.000025
+                },
+                {
+                    "label": "claude-sonnet-5",
+                    "name": "claude-sonnet-5",
+                    "description": "Claude Sonnet 5",
+                    "input_cost": 0.000002,
+                    "output_cost": 0.00001
                 },
                 {
                     "label": "claude-opus-4-5@20251101",

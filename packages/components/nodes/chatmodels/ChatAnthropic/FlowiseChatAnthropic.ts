@@ -4,6 +4,7 @@ import { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager'
 import { type BaseMessage, type MessageContentComplex } from '@langchain/core/messages'
 import { type ChatResult, type ChatGenerationChunk } from '@langchain/core/outputs'
 import { IVisionChatModal, IMultiModalOption } from '../../../src'
+import { rejectsSamplingParams, stripSamplingParams } from './anthropicModelCompat'
 
 const DEFAULT_IMAGE_MODEL = 'claude-3-5-haiku-latest'
 const DEFAULT_IMAGE_MAX_TOKEN = 2048
@@ -58,24 +59,31 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
      * Langchain's ChatAnthropic defaults topP and topK to -1 as "unset" sentinels, but the
      * Anthropic API rejects -1 on newer models (e.g. claude-sonnet-4-6). Additionally, some
      * models reject requests where both temperature and top_p are present simultaneously.
+     * Claude Sonnet 5 and Opus 4.7+ reject any non-default sampling parameters entirely.
      *
      * Rules applied here:
      *  - Strip top_p / top_k when they are -1 (Langchain's unset sentinel).
      *  - If a valid top_p (0–1) is being sent, also strip temperature (mutually exclusive on newer models).
+     *  - Omit all sampling params for Sonnet 5 / Opus 4.7+.
      */
     // @ts-ignore – return type intentionally widened; base class uses a complex intersection type that varies across langchain versions
     invocationParams(options?: this['ParsedCallOptions']): Record<string, unknown> {
         const params = super.invocationParams(options) as Record<string, unknown>
+        const modelName = this.modelName || this.configuredModel
 
-        const topP = params['top_p']
-        const topK = params['top_k']
+        if (rejectsSamplingParams(modelName)) {
+            stripSamplingParams(params)
+        } else {
+            const topP = params['top_p']
+            const topK = params['top_k']
 
-        // Remove sentinel -1 values that Langchain uses to mean "not set"
-        if (topP === -1 || topP === undefined) delete params['top_p']
-        if (topK === -1 || topK === undefined) delete params['top_k']
+            // Remove sentinel -1 values that Langchain uses to mean "not set"
+            if (topP === -1 || topP === undefined) delete params['top_p']
+            if (topK === -1 || topK === undefined) delete params['top_k']
 
-        // If a valid top_p is being sent, temperature must be omitted (mutually exclusive on newer models)
-        if (typeof params['top_p'] === 'number') delete params['temperature']
+            // If a valid top_p is being sent, temperature must be omitted (mutually exclusive on newer models)
+            if (typeof params['top_p'] === 'number') delete params['temperature']
+        }
 
         if (this.promptCaching) {
             // Explicit breakpoint on the tool definitions: tools sit at the front of the prefix
