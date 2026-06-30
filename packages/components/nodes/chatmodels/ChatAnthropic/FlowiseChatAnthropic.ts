@@ -85,6 +85,11 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
             if (typeof params['top_p'] === 'number') delete params['temperature']
         }
 
+        const thinking = params['thinking'] as { type?: string; display?: string } | undefined
+        if (thinking?.type === 'adaptive' && thinking.display !== 'summarized') {
+            thinking.display = 'summarized'
+        }
+
         if (this.promptCaching) {
             // Explicit breakpoint on the tool definitions: tools sit at the front of the prefix
             // (tools -> system -> messages), so a breakpoint on the last tool caches the (usually

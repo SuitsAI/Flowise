@@ -22,7 +22,7 @@ class ChatAnthropic_ChatModels implements INode {
     constructor() {
         this.label = 'ChatAnthropic'
         this.name = 'chatAnthropic'
-        this.version = 9.3
+        this.version = 9.4
         this.type = 'ChatAnthropic'
         this.icon = 'Anthropic.svg'
         this.category = 'Chat Models'
@@ -97,7 +97,7 @@ class ChatAnthropic_ChatModels implements INode {
                 name: 'extendedThinking',
                 type: 'boolean',
                 description:
-                    'Turn on to stream Claude internal thinking separately from the answer (SSE event name: llmReasoning). On Sonnet 3.7 through Sonnet 4.6, uses manual extended thinking with Budget Tokens. On Claude Sonnet 5 and Opus 4.7+, uses adaptive thinking when on, or disables thinking when off.',
+                    'Turn on to stream Claude internal thinking separately from the answer (SSE event name: llmReasoning). On Sonnet 3.7 through Sonnet 4.6, uses manual extended thinking with Budget Tokens. On Claude Sonnet 5 and Opus 4.7+, uses adaptive thinking with summarized display when on, or disables thinking when off.',
                 optional: true,
                 additionalParams: true
             },
