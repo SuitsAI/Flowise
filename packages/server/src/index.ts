@@ -35,6 +35,7 @@ import { Organization } from './enterprise/database/entities/organization.entity
 import { GeneralRole, Role } from './enterprise/database/entities/role.entity'
 import { migrateApiKeysFromJsonToDb } from './utils/apiKey'
 import { ExpressAdapter } from '@bull-board/express'
+import { initializeLangfuseTracing, flushLangfuseTracing } from 'flowise-components'
 
 declare global {
     namespace Express {
@@ -357,6 +358,7 @@ export class App {
         try {
             const removePromises: any[] = []
             removePromises.push(this.telemetry.flush())
+            removePromises.push(flushLangfuseTracing())
             if (this.queueManager) {
                 removePromises.push(this.redisSubscriber.disconnect())
             }
@@ -375,6 +377,17 @@ export async function start(): Promise<void> {
     const host = process.env.HOST
     const port = parseInt(process.env.PORT || '', 10) || 3000
     const server = http.createServer(serverApp.app)
+
+    // Chatflow-level Langfuse credentials can't be known before the first request, but
+    // env-configured deployments shouldn't have to wait on that first request to start tracing.
+    if (process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY) {
+        initializeLangfuseTracing({
+            publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+            secretKey: process.env.LANGFUSE_SECRET_KEY,
+            baseUrl: process.env.LANGFUSE_BASE_URL,
+            release: process.env.LANGFUSE_RELEASE
+        })
+    }
 
     await serverApp.initDatabase()
     await serverApp.config()

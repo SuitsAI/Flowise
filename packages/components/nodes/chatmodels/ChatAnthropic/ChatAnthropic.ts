@@ -4,6 +4,7 @@ import { BaseLLMParams } from '@langchain/core/language_models/llms'
 import { ICommonObject, IMultiModalOption, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
 import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
 import { ChatAnthropic as FlowiseChatAnthropic } from './FlowiseChatAnthropic'
+import { buildThinkingConfig, rejectsSamplingParams } from './anthropicModelCompat'
 import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
 
 class ChatAnthropic_ChatModels implements INode {
@@ -21,7 +22,7 @@ class ChatAnthropic_ChatModels implements INode {
     constructor() {
         this.label = 'ChatAnthropic'
         this.name = 'chatAnthropic'
-        this.version = 9.2
+        this.version = 9.4
         this.type = 'ChatAnthropic'
         this.icon = 'Anthropic.svg'
         this.category = 'Chat Models'
@@ -53,6 +54,8 @@ class ChatAnthropic_ChatModels implements INode {
                 type: 'number',
                 step: 0.1,
                 default: 0.9,
+                description:
+                    'Not supported on Claude Sonnet 5 and Opus 4.7+ (sampling parameters are omitted for those models).',
                 optional: true
             },
             {
@@ -76,6 +79,7 @@ class ChatAnthropic_ChatModels implements INode {
                 name: 'topP',
                 type: 'number',
                 step: 0.1,
+                description: 'Not supported on Claude Sonnet 5 and Opus 4.7+.',
                 optional: true,
                 additionalParams: true
             },
@@ -84,6 +88,7 @@ class ChatAnthropic_ChatModels implements INode {
                 name: 'topK',
                 type: 'number',
                 step: 0.1,
+                description: 'Not supported on Claude Sonnet 5 and Opus 4.7+.',
                 optional: true,
                 additionalParams: true
             },
@@ -92,7 +97,7 @@ class ChatAnthropic_ChatModels implements INode {
                 name: 'extendedThinking',
                 type: 'boolean',
                 description:
-                    'Turn on to stream Claude internal thinking separately from the answer (SSE event name: llmReasoning). Supported on Sonnet 3.7+, Claude 4 / Sonnet 4.x, etc. If off, you only get normal answer tokens.',
+                    'Turn on to stream Claude internal thinking separately from the answer (SSE event name: llmReasoning). On Sonnet 3.7 through Sonnet 4.6, uses manual extended thinking with Budget Tokens. On Claude Sonnet 5 and Opus 4.7+, uses adaptive thinking with summarized display when on, or disables thinking when off.',
                 optional: true,
                 additionalParams: true
             },
@@ -102,7 +107,8 @@ class ChatAnthropic_ChatModels implements INode {
                 type: 'number',
                 step: 1,
                 default: 1024,
-                description: 'Maximum number of tokens Claude is allowed use for its internal reasoning process',
+                description:
+                    'Maximum thinking tokens for manual extended thinking (Sonnet 3.7 through Sonnet 4.6). Ignored on Claude Sonnet 5 and Opus 4.7+, which use adaptive thinking instead.',
                 optional: true,
                 additionalParams: true
             },
@@ -176,23 +182,32 @@ class ChatAnthropic_ChatModels implements INode {
 
         const allowImageUploads = nodeData.inputs?.allowImageUploads as boolean
 
+        const omitSamplingParams = rejectsSamplingParams(modelName)
+
         const obj: Partial<AnthropicInput> & BaseLLMParams & { anthropicApiKey?: string } = {
-            temperature: parseFloat(temperature),
             modelName,
             anthropicApiKey,
             streaming: streaming ?? true
         }
 
+        if (!omitSamplingParams) {
+            obj.temperature = parseFloat(temperature)
+        }
+
         if (maxTokens) obj.maxTokens = parseInt(maxTokens, 10)
-        if (topP) obj.topP = parseFloat(topP)
-        if (topK) obj.topK = parseFloat(topK)
+        if (!omitSamplingParams) {
+            if (topP) obj.topP = parseFloat(topP)
+            if (topK) obj.topK = parseFloat(topK)
+        }
         if (cache) obj.cache = cache
-        if (extendedThinking) {
-            obj.thinking = {
-                type: 'enabled',
-                budget_tokens: parseInt(budgetTokens, 10)
+
+        const thinking = buildThinkingConfig(modelName, extendedThinking ?? false, budgetTokens)
+        if (thinking) {
+            // @ts-ignore – adaptive/disabled types added in newer Anthropic API; LangChain types may lag
+            obj.thinking = thinking
+            if (thinking.type === 'enabled') {
+                delete obj.temperature
             }
-            delete obj.temperature
         }
 
         // Collect anthropic-beta header values (comma-separated), de-duplicated

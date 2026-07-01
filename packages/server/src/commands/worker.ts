@@ -8,6 +8,7 @@ import { CachePool } from '../CachePool'
 import { QueueEvents, QueueEventsListener } from 'bullmq'
 import { AbortControllerPool } from '../AbortControllerPool'
 import { UsageCacheManager } from '../UsageCacheManager'
+import { initializeLangfuseTracing, flushLangfuseTracing } from 'flowise-components'
 
 interface CustomListener extends QueueEventsListener {
     abort: (args: { id: string }, id: string) => void
@@ -19,6 +20,17 @@ export default class Worker extends BaseCommand {
 
     async run(): Promise<void> {
         logger.info('Starting Flowise Worker...')
+
+        // Chatflow-level Langfuse credentials can't be known before the first job, but
+        // env-configured deployments shouldn't have to wait on that first job to start tracing.
+        if (process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY) {
+            initializeLangfuseTracing({
+                publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+                secretKey: process.env.LANGFUSE_SECRET_KEY,
+                baseUrl: process.env.LANGFUSE_BASE_URL,
+                release: process.env.LANGFUSE_RELEASE
+            })
+        }
 
         const { appDataSource, telemetry, componentNodes, cachePool, abortControllerPool, usageCacheManager } = await this.prepareData()
 
@@ -98,6 +110,8 @@ export default class Worker extends BaseCommand {
             const upsertWorker = queueManager.getQueue('upsert').getWorker()
             logger.info(`Shutting down Flowise Upsertion Worker ${this.upsertionWorkerId}...`)
             await upsertWorker.close()
+
+            await flushLangfuseTracing()
         } catch (error) {
             logger.error('There was an error shutting down Flowise Worker...', error)
             await this.failExit()
