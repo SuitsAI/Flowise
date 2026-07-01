@@ -2,14 +2,13 @@ import { Logger } from 'winston'
 import { URL } from 'url'
 import { v4 as uuidv4 } from 'uuid'
 import { Client } from 'langsmith'
-import { CallbackHandler } from '@langfuse/langchain'
 import { LangfuseSpanProcessor } from '@langfuse/otel'
-import { startObservation, LangfuseSpan, LangfuseGeneration } from '@langfuse/tracing'
+import { startObservation, propagateAttributes, LangfuseSpan, LangfuseGeneration } from '@langfuse/tracing'
 import lunary from 'lunary'
 import { RunTree, RunTreeConfig, Client as LangsmithClient } from 'langsmith'
 import { LangChainInstrumentation } from '@arizeai/openinference-instrumentation-langchain'
 import { Metadata } from '@grpc/grpc-js'
-import opentelemetry, { Span, SpanStatusCode, Tracer } from '@opentelemetry/api'
+import opentelemetry, { Span, SpanStatusCode, Tracer, context, ROOT_CONTEXT } from '@opentelemetry/api'
 import { OTLPTraceExporter as GrpcOTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc'
 import { OTLPTraceExporter as ProtoOTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto'
 import { registerInstrumentations } from '@opentelemetry/instrumentation'
@@ -27,6 +26,7 @@ import { AgentAction } from '@langchain/core/agents'
 import { LunaryHandler } from '@langchain/community/callbacks/handlers/lunary'
 
 import { getCredentialData, getCredentialParam, getEnvironmentVariable } from './utils'
+import { DetachedLangfuseCallbackHandler } from './langfuseDetachedHandler'
 import { EvaluationRunTracer } from '../evaluation/EvaluationRunTracer'
 import { EvaluationRunTracerLlama } from '../evaluation/EvaluationRunTracerLlama'
 import { ICommonObject, IDatabaseEntity, INodeData, IServerSideEventStreamer } from './Interface'
@@ -65,7 +65,9 @@ export function initializeLangfuseTracing(config: LangfuseTracingConfig): void {
             publicKey: config.publicKey ?? process.env.LANGFUSE_PUBLIC_KEY,
             secretKey: config.secretKey ?? process.env.LANGFUSE_SECRET_KEY,
             baseUrl: config.baseUrl ?? process.env.LANGFUSE_BASE_URL ?? 'https://us.cloud.langfuse.com',
-            release: config.release ?? process.env.LANGFUSE_RELEASE
+            release: config.release ?? process.env.LANGFUSE_RELEASE,
+            // Opt into real-time ingestion so traces show up in Langfuse without waiting on batch processing
+            additionalHeaders: { 'x-langfuse-ingestion-version': '4' }
         })
         const tracerProvider = new NodeTracerProvider({
             spanProcessors: [langfuseSpanProcessor]
@@ -620,12 +622,15 @@ export const additionalCallbacks = async (nodeData: INodeData, options: ICommonO
                     // v5 CallbackHandler only carries trace-level correlation attributes (no credentials)
                     let langFuseOptions: any = {}
                     if (options.chatId) langFuseOptions.sessionId = options.chatId
+                    if (options.userId) langFuseOptions.userId = options.userId
+                    const langFuseTags = [options.chatflowid].filter(Boolean)
+                    if (langFuseTags.length) langFuseOptions.tags = langFuseTags
 
                     if (nodeData?.inputs?.analytics?.langFuse) {
                         langFuseOptions = { ...langFuseOptions, ...nodeData?.inputs?.analytics?.langFuse }
                     }
 
-                    const handler = new CallbackHandler(langFuseOptions)
+                    const handler = new DetachedLangfuseCallbackHandler(langFuseOptions)
                     callbacks.push(handler)
                 } else if (provider === 'lunary') {
                     const lunaryPublicKey = getCredentialParam('lunaryAppId', credentialData, nodeData)
@@ -973,16 +978,30 @@ export class AnalyticHandler {
             let rootSpan: LangfuseSpan | undefined
 
             if (!parentIds || !Object.keys(parentIds).length) {
-                rootSpan = startObservation(
-                    name,
-                    {
-                        input: { text: input },
-                        metadata: { sessionId: this.options.chatId, tags: ['openai-assistant'] },
-                        ...this.nodeData?.inputs?.analytics?.langFuse
-                    },
-                    { asType: 'span' }
-                )
-                if (this.options.chatId) rootSpan.setTraceIO({ input: { text: input } })
+                // Detach the root trace from whatever OTel context happens to be ambient, and
+                // use propagateAttributes (same mechanism @langfuse/langchain's CallbackHandler
+                // uses internally) so sessionId/userId/tags land on Langfuse's real trace-level
+                // attributes instead of being buried inside an arbitrary metadata blob.
+                context.with(ROOT_CONTEXT, () => {
+                    propagateAttributes(
+                        {
+                            sessionId: this.options.chatId,
+                            userId: this.options.userId,
+                            tags: ['openai-assistant']
+                        },
+                        () => {
+                            rootSpan = startObservation(
+                                name,
+                                {
+                                    input: { text: input },
+                                    ...this.nodeData?.inputs?.analytics?.langFuse
+                                },
+                                { asType: 'span' }
+                            )
+                        }
+                    )
+                })
+                if (this.options.chatId && rootSpan) rootSpan.setTraceIO({ input: { text: input } })
             } else {
                 rootSpan = this.handlers['langFuse'].trace[parentIds['langFuse'].trace]
             }
