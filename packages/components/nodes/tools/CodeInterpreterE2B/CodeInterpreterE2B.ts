@@ -325,48 +325,48 @@ export class E2BTool extends StructuredTool {
             })
 
             const artifacts: Array<{ type: string; data: any }> = []
-            for (const result of execution.results) {
-                for (const key in result) {
-                    if (!(result as any)[key]) continue
+            // for (const result of execution.results) {
+            //     for (const key in result) {
+            //         if (!(result as any)[key]) continue
 
-                    if (key === 'png') {
-                        //@ts-ignore
-                        const pngData = Buffer.from(result.png, 'base64')
+            //         if (key === 'png') {
+            //             //@ts-ignore
+            //             const pngData = Buffer.from(result.png, 'base64')
 
-                        const filename = `artifact_${Date.now()}.png`
+            //             const filename = `artifact_${Date.now()}.png`
 
-                        // Don't check storage usage because this is incoming file, and if we throw error, agent will keep on retrying
-                        const { path } = await addSingleFileToStorage(
-                            'image/png',
-                            pngData,
-                            filename,
-                            this.orgId,
-                            this.chatflowid,
-                            flowConfig!.chatId as string
-                        )
+            //             // Don't check storage usage because this is incoming file, and if we throw error, agent will keep on retrying
+            //             const { path } = await addSingleFileToStorage(
+            //                 'image/png',
+            //                 pngData,
+            //                 filename,
+            //                 this.orgId,
+            //                 this.chatflowid,
+            //                 flowConfig!.chatId as string
+            //             )
 
-                        artifacts.push({ type: 'png', data: path })
-                    } else if (key === 'jpeg') {
-                        //@ts-ignore
-                        const jpegData = Buffer.from(result.jpeg, 'base64')
+            //             artifacts.push({ type: 'png', data: path })
+            //         } else if (key === 'jpeg') {
+            //             //@ts-ignore
+            //             const jpegData = Buffer.from(result.jpeg, 'base64')
 
-                        const filename = `artifact_${Date.now()}.jpg`
+            //             const filename = `artifact_${Date.now()}.jpg`
 
-                        const { path } = await addSingleFileToStorage(
-                            'image/jpg',
-                            jpegData,
-                            filename,
-                            this.orgId,
-                            this.chatflowid,
-                            flowConfig!.chatId as string
-                        )
+            //             const { path } = await addSingleFileToStorage(
+            //                 'image/jpg',
+            //                 jpegData,
+            //                 filename,
+            //                 this.orgId,
+            //                 this.chatflowid,
+            //                 flowConfig!.chatId as string
+            //             )
 
-                        artifacts.push({ type: 'jpeg', data: path })
-                    } else if (key === 'html' || key === 'markdown' || key === 'latex' || key === 'json' || key === 'javascript') {
-                        artifacts.push({ type: key, data: (result as any)[key] })
-                    } //TODO: support for pdf
-                }
-            }
+            //             artifacts.push({ type: 'jpeg', data: path })
+            //         } else if (key === 'html' || key === 'markdown' || key === 'latex' || key === 'json' || key === 'javascript') {
+            //             artifacts.push({ type: key, data: (result as any)[key] })
+            //         } //TODO: support for pdf
+            //     }
+            // }
 
             // Download all files from /generated folder and add as artifacts (ignore files without extension)
             try {
