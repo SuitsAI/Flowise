@@ -29,7 +29,8 @@ export const EFFORT_VALUES = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 export type AnthropicEffort = (typeof EFFORT_VALUES)[number]
 
 /**
- * Models that support the top-level `effort` parameter (tunes intelligence vs. token spend).
+ * Models that support the `effort` parameter (tunes intelligence vs. token spend), sent as
+ * `output_config: { effort }` in the Anthropic API request body.
  * @see https://platform.claude.com/docs/en/build-with-claude/effort
  */
 export function supportsEffort(modelName: string): boolean {
