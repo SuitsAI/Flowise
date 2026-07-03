@@ -219,9 +219,10 @@ class ChatAnthropic_ChatModels implements INode {
         if (cache) obj.cache = cache
 
         if (effort && supportsEffort(modelName)) {
-            // `effort` is a top-level Anthropic API field not yet modeled in @langchain/anthropic's
-            // AnthropicInput; invocationKwargs is spread last into invocationParams() so it passes through untouched.
-            obj.invocationKwargs = { ...obj.invocationKwargs, effort }
+            // `effort` is nested under `output_config` in the Anthropic API (not a top-level field);
+            // not yet modeled in @langchain/anthropic's AnthropicInput, but invocationKwargs is spread
+            // last into invocationParams() so it passes through untouched.
+            obj.invocationKwargs = { ...obj.invocationKwargs, output_config: { effort } }
         }
 
         const thinking = buildThinkingConfig(modelName, extendedThinking ?? false, budgetTokens)
