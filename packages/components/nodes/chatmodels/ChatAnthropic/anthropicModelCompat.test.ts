@@ -2,7 +2,8 @@ import {
     buildThinkingConfig,
     rejectsSamplingParams,
     requiresAdaptiveThinkingApi,
-    stripSamplingParams
+    stripSamplingParams,
+    supportsEffort
 } from './anthropicModelCompat'
 
 describe('anthropicModelCompat', () => {
@@ -56,5 +57,26 @@ describe('anthropicModelCompat', () => {
     it('requiresAdaptiveThinkingApi matches rejectsSamplingParams', () => {
         expect(requiresAdaptiveThinkingApi('claude-sonnet-5')).toBe(true)
         expect(requiresAdaptiveThinkingApi('claude-sonnet-4-6')).toBe(false)
+    })
+
+    describe('supportsEffort', () => {
+        it.each([
+            'claude-sonnet-5',
+            'claude-sonnet-4-6',
+            'claude-opus-4-8',
+            'claude-opus-4-7',
+            'claude-opus-4-6',
+            'claude-opus-4-5',
+            'claude-opus-4-7-20251101'
+        ])('returns true for %s', (model) => {
+            expect(supportsEffort(model)).toBe(true)
+        })
+
+        it.each(['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-3-haiku', 'claude-3-5-sonnet-latest'])(
+            'returns false for %s',
+            (model) => {
+                expect(supportsEffort(model)).toBe(false)
+            }
+        )
     })
 })

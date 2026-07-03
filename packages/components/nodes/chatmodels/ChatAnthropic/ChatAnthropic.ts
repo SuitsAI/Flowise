@@ -4,7 +4,7 @@ import { BaseLLMParams } from '@langchain/core/language_models/llms'
 import { ICommonObject, IMultiModalOption, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
 import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
 import { ChatAnthropic as FlowiseChatAnthropic } from './FlowiseChatAnthropic'
-import { buildThinkingConfig, rejectsSamplingParams } from './anthropicModelCompat'
+import { buildThinkingConfig, rejectsSamplingParams, supportsEffort } from './anthropicModelCompat'
 import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
 
 class ChatAnthropic_ChatModels implements INode {
@@ -22,7 +22,7 @@ class ChatAnthropic_ChatModels implements INode {
     constructor() {
         this.label = 'ChatAnthropic'
         this.name = 'chatAnthropic'
-        this.version = 9.4
+        this.version = 9.5
         this.type = 'ChatAnthropic'
         this.icon = 'Anthropic.svg'
         this.category = 'Chat Models'
@@ -89,6 +89,22 @@ class ChatAnthropic_ChatModels implements INode {
                 type: 'number',
                 step: 0.1,
                 description: 'Not supported on Claude Sonnet 5 and Opus 4.7+.',
+                optional: true,
+                additionalParams: true
+            },
+            {
+                label: 'Effort',
+                name: 'effort',
+                type: 'options',
+                options: [
+                    { label: 'Low', name: 'low' },
+                    { label: 'Medium', name: 'medium' },
+                    { label: 'High (default)', name: 'high' },
+                    { label: 'Xhigh', name: 'xhigh' },
+                    { label: 'Max', name: 'max' }
+                ],
+                description:
+                    'Tunes intelligence vs. token spend. Only supported on Claude Sonnet 5, Claude Sonnet 4.6, and Claude Opus 4.5+ (ignored on other models). Defaults to "high" when left unset. Use "xhigh" for the hardest coding/agentic tasks, "low"/"medium" to reduce cost and latency, and "max" for the highest capability with no token-spend constraints. See <a href="https://platform.claude.com/docs/en/build-with-claude/effort" target="_blank">Anthropic docs</a>.',
                 optional: true,
                 additionalParams: true
             },
@@ -171,6 +187,7 @@ class ChatAnthropic_ChatModels implements INode {
         const topK = nodeData.inputs?.topK as string
         const streaming = nodeData.inputs?.streaming as boolean
         const cache = nodeData.inputs?.cache as BaseCache
+        const effort = nodeData.inputs?.effort as string
         const extendedThinking = nodeData.inputs?.extendedThinking as boolean
         const budgetTokens = nodeData.inputs?.budgetTokens as string
         const beta = nodeData.inputs?.beta as string
@@ -200,6 +217,12 @@ class ChatAnthropic_ChatModels implements INode {
             if (topK) obj.topK = parseFloat(topK)
         }
         if (cache) obj.cache = cache
+
+        if (effort && supportsEffort(modelName)) {
+            // `effort` is a top-level Anthropic API field not yet modeled in @langchain/anthropic's
+            // AnthropicInput; invocationKwargs is spread last into invocationParams() so it passes through untouched.
+            obj.invocationKwargs = { ...obj.invocationKwargs, effort }
+        }
 
         const thinking = buildThinkingConfig(modelName, extendedThinking ?? false, budgetTokens)
         if (thinking) {
