@@ -24,6 +24,26 @@ export function stripSamplingParams(params: Record<string, unknown>): void {
     delete params['top_k']
 }
 
+/** Valid values for the `effort` parameter, ordered from least to most token/latency spend. */
+export const EFFORT_VALUES = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+export type AnthropicEffort = (typeof EFFORT_VALUES)[number]
+
+/**
+ * Models that support the `effort` parameter (tunes intelligence vs. token spend), sent as
+ * `output_config: { effort }` in the Anthropic API request body.
+ * @see https://platform.claude.com/docs/en/build-with-claude/effort
+ */
+export function supportsEffort(modelName: string): boolean {
+    const normalized = modelName.trim().toLowerCase()
+    if (normalized === 'claude-sonnet-5' || normalized.startsWith('claude-sonnet-5')) return true
+    if (normalized === 'claude-sonnet-4-6' || normalized.startsWith('claude-sonnet-4-6')) return true
+    if (normalized === 'claude-opus-4-8' || normalized.startsWith('claude-opus-4-8')) return true
+    if (normalized === 'claude-opus-4-7' || normalized.startsWith('claude-opus-4-7')) return true
+    if (normalized === 'claude-opus-4-6' || normalized.startsWith('claude-opus-4-6')) return true
+    if (normalized === 'claude-opus-4-5' || normalized.startsWith('claude-opus-4-5')) return true
+    return false
+}
+
 export type AnthropicThinkingConfig =
     | { type: 'enabled'; budget_tokens: number }
     | { type: 'adaptive'; display: 'summarized' }
