@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { ICommonObject, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../../src/Interface'
 import { MCPToolkit } from '../core'
 
-const RESPONSE_BATCH_SIZE = 200_000
+const RESPONSE_BATCH_SIZE = 1_000
 
 const mcpServerConfig = `{
     "command": "npx",
