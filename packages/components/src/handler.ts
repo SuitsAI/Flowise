@@ -27,6 +27,7 @@ import { LunaryHandler } from '@langchain/community/callbacks/handlers/lunary'
 
 import { getCredentialData, getCredentialParam, getEnvironmentVariable } from './utils'
 import { DetachedLangfuseCallbackHandler } from './langfuseDetachedHandler'
+import { normalizeLangfuseToolCalls, toLangfuseTool } from './langfuseTools'
 import { EvaluationRunTracer } from '../evaluation/EvaluationRunTracer'
 import { EvaluationRunTracerLlama } from '../evaluation/EvaluationRunTracerLlama'
 import { ICommonObject, IDatabaseEntity, INodeData, IServerSideEventStreamer } from './Interface'
@@ -1327,7 +1328,12 @@ export class AnalyticHandler {
         }
     }
 
-    async onLLMStart(name: string, input: string | BaseMessageLike[], parentIds: ICommonObject) {
+    async onLLMStart(
+        name: string,
+        input: string | BaseMessageLike[],
+        parentIds: ICommonObject,
+        options?: { tools?: unknown[] }
+    ) {
         const returnIds: ICommonObject = {
             langSmith: {},
             langFuse: {},
@@ -1361,7 +1367,11 @@ export class AnalyticHandler {
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
             const rootSpan: LangfuseSpan | undefined = this.handlers['langFuse'].trace[parentIds['langFuse'].trace]
             if (rootSpan) {
-                const generation = rootSpan.startObservation(name, { input }, { asType: 'generation' })
+                const tools = (options?.tools ?? [])
+                    .map((tool) => toLangfuseTool(tool))
+                    .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
+                const generationInput = tools.length ? { messages: input, tools } : input
+                const generation = rootSpan.startObservation(name, { input: generationInput }, { asType: 'generation' })
                 this.handlers['langFuse'].generation[generation.id] = generation
                 returnIds['langFuse'].generation = generation.id
             }
@@ -1456,13 +1466,25 @@ export class AnalyticHandler {
         return returnIds
     }
 
-    async onLLMEnd(returnIds: ICommonObject, output: string) {
+    async onLLMEnd(returnIds: ICommonObject, output: string | Record<string, any>) {
+        const outputText = typeof output === 'string' ? output : (output?.content ?? output)
+        const calledTools =
+            typeof output === 'object' && output !== null ? output.calledTools ?? output.tool_calls : undefined
+        const langfuseOutput =
+            Array.isArray(calledTools) && calledTools.length
+                ? {
+                      role: 'assistant',
+                      content: outputText,
+                      tool_calls: normalizeLangfuseToolCalls(calledTools)
+                  }
+                : outputText
+
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langSmith')) {
             const llmRun: RunTree | undefined = this.handlers['langSmith'].llmRun[returnIds['langSmith'].llmRun]
             if (llmRun) {
                 await llmRun.end({
                     outputs: {
-                        generations: [output]
+                        generations: [outputText]
                     }
                 })
                 await llmRun.patchRun()
@@ -1472,7 +1494,7 @@ export class AnalyticHandler {
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
             const generation: LangfuseGeneration | undefined = this.handlers['langFuse'].generation[returnIds['langFuse'].generation]
             if (generation) {
-                generation.update({ output })
+                generation.update({ output: langfuseOutput })
                 generation.end()
             }
         }
@@ -1484,7 +1506,7 @@ export class AnalyticHandler {
             if (monitor && llmEventId) {
                 await monitor.trackEvent('llm', 'end', {
                     runId: llmEventId,
-                    output
+                    output: outputText
                 })
             }
         }
@@ -1493,7 +1515,7 @@ export class AnalyticHandler {
             const span: LangWatchSpan | undefined = this.handlers['langWatch'].span[returnIds['langWatch'].span]
             if (span) {
                 span.end({
-                    output: autoconvertTypedValues(output)
+                    output: autoconvertTypedValues(outputText)
                 })
             }
         }
@@ -1501,7 +1523,7 @@ export class AnalyticHandler {
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'arize')) {
             const llmSpan: Span | undefined = this.handlers['arize'].llmSpan[returnIds['arize'].llmSpan]
             if (llmSpan) {
-                llmSpan.setAttribute('output.value', JSON.stringify(output))
+                llmSpan.setAttribute('output.value', JSON.stringify(outputText))
                 llmSpan.setAttribute('output.mime_type', 'application/json')
                 llmSpan.setStatus({ code: SpanStatusCode.OK })
                 llmSpan.end()
@@ -1511,7 +1533,7 @@ export class AnalyticHandler {
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'phoenix')) {
             const llmSpan: Span | undefined = this.handlers['phoenix'].llmSpan[returnIds['phoenix'].llmSpan]
             if (llmSpan) {
-                llmSpan.setAttribute('output.value', JSON.stringify(output))
+                llmSpan.setAttribute('output.value', JSON.stringify(outputText))
                 llmSpan.setAttribute('output.mime_type', 'application/json')
                 llmSpan.setStatus({ code: SpanStatusCode.OK })
                 llmSpan.end()
@@ -1521,7 +1543,7 @@ export class AnalyticHandler {
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'opik')) {
             const llmSpan: Span | undefined = this.handlers['opik'].llmSpan[returnIds['opik'].llmSpan]
             if (llmSpan) {
-                llmSpan.setAttribute('output.value', JSON.stringify(output))
+                llmSpan.setAttribute('output.value', JSON.stringify(outputText))
                 llmSpan.setAttribute('output.mime_type', 'application/json')
                 llmSpan.setStatus({ code: SpanStatusCode.OK })
                 llmSpan.end()
