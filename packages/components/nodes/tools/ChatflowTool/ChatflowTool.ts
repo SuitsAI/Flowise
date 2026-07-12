@@ -25,7 +25,7 @@ class ChatflowTool_Tools implements INode {
     constructor() {
         this.label = 'Chatflow Tool'
         this.name = 'ChatflowTool'
-        this.version = 5.2
+        this.version = 5.3
         this.type = 'ChatflowTool'
         this.icon = 'chatflowTool.svg'
         this.category = 'Tools'
@@ -58,6 +58,14 @@ class ChatflowTool_Tools implements INode {
                 rows: 3,
                 placeholder:
                     'State of the Union QA - useful for when you need to ask questions about the most recent state of the union address.'
+            },
+            {
+                label: 'Input Description',
+                name: 'inputDescription',
+                type: 'string',
+                description: 'Description of the input parameter for the LLM to understand what to pass to this tool.',
+                placeholder: 'input question',
+                optional: true
             },
             {
                 label: 'Return Direct',
@@ -157,6 +165,7 @@ class ChatflowTool_Tools implements INode {
         const selectedChatflowId = nodeData.inputs?.selectedChatflow as string
         const _name = nodeData.inputs?.name as string
         const description = nodeData.inputs?.description as string
+        const inputDescription = nodeData.inputs?.inputDescription as string
         const useQuestionFromChat = nodeData.inputs?.useQuestionFromChat as boolean
         const returnDirect = nodeData.inputs?.returnDirect as boolean
         const customInput = nodeData.inputs?.customInput as string
@@ -202,6 +211,7 @@ class ChatflowTool_Tools implements INode {
             name,
             baseURL,
             description,
+            inputDescription,
             returnDirect,
             chatflowid: selectedChatflowId,
             startNewSession,
@@ -241,6 +251,7 @@ class ChatflowTool extends StructuredTool {
     constructor({
         name,
         description,
+        inputDescription,
         returnDirect,
         input,
         chatflowid,
@@ -251,6 +262,7 @@ class ChatflowTool extends StructuredTool {
     }: {
         name: string
         description: string
+        inputDescription?: string
         returnDirect: boolean
         input: string
         chatflowid: string
@@ -269,6 +281,9 @@ class ChatflowTool extends StructuredTool {
         this.chatflowid = chatflowid
         this.overrideConfig = overrideConfig
         this.returnDirect = returnDirect
+        this.schema = z.object({
+            input: z.string().describe(inputDescription || 'input question')
+        }) as any
     }
 
     async call(

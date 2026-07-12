@@ -959,7 +959,9 @@ class Agent_Agentflow implements INode {
             // Start analytics
             if (analyticHandlers && options.parentTraceIds) {
                 const llmLabel = options?.componentNodes?.[model]?.label || model
-                llmIds = await analyticHandlers.onLLMStart(llmLabel, messages, options.parentTraceIds)
+                llmIds = await analyticHandlers.onLLMStart(llmLabel, messages, options.parentTraceIds, {
+                    tools: availableTools
+                })
             }
 
             // Track execution time
@@ -1177,7 +1179,7 @@ class Agent_Agentflow implements INode {
 
             // End analytics tracking
             if (analyticHandlers && llmIds) {
-                await analyticHandlers.onLLMEnd(llmIds, finalResponse)
+                await analyticHandlers.onLLMEnd(llmIds, output)
             }
 
             // Send additional streaming events if needed

@@ -1109,6 +1109,36 @@
             "name": "chatOpenAI",
             "models": [
                 {
+                    "label": "gpt-5.6-sol",
+                    "name": "gpt-5.6-sol",
+                    "input_cost": 0.000005,
+                    "output_cost": 0.00003
+                },
+                {
+                    "label": "gpt-5.6-terra",
+                    "name": "gpt-5.6-terra",
+                    "input_cost": 0.0000025,
+                    "output_cost": 0.000015
+                },
+                {
+                    "label": "gpt-5.6-luna",
+                    "name": "gpt-5.6-luna",
+                    "input_cost": 0.000001,
+                    "output_cost": 0.000006
+                },
+                {
+                    "label": "gpt-5.5",
+                    "name": "gpt-5.5",
+                    "input_cost": 0.000005,
+                    "output_cost": 0.00003
+                },
+                {
+                    "label": "gpt-image-2",
+                    "name": "gpt-image-2",
+                    "input_cost": 0.000005,
+                    "output_cost": 0.00003
+                },
+                {
                     "label": "gpt-5.4-mini",
                     "name": "gpt-5.4-mini",
                     "input_cost": 0.00000075,
