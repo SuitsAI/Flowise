@@ -621,8 +621,11 @@ export const additionalCallbacks = async (nodeData: INodeData, options: ICommonO
                     })
 
                     // v5 CallbackHandler only carries trace-level correlation attributes (no credentials)
+                    // Prefer conversationId (from overrideConfig.vars) as Langfuse sessionId so
+                    // traces group by external conversation rather than Flowise chatId.
                     let langFuseOptions: any = {}
-                    if (options.chatId) langFuseOptions.sessionId = options.chatId
+                    const langfuseSessionId = options.conversationId || options.chatId
+                    if (langfuseSessionId) langFuseOptions.sessionId = langfuseSessionId
                     if (options.userId) langFuseOptions.userId = options.userId
                     const langFuseTags = [options.chatflowid].filter(Boolean)
                     if (langFuseTags.length) langFuseOptions.tags = langFuseTags
@@ -983,10 +986,11 @@ export class AnalyticHandler {
                 // use propagateAttributes (same mechanism @langfuse/langchain's CallbackHandler
                 // uses internally) so sessionId/userId/tags land on Langfuse's real trace-level
                 // attributes instead of being buried inside an arbitrary metadata blob.
+                const langfuseSessionId = this.options.conversationId || this.options.chatId
                 context.with(ROOT_CONTEXT, () => {
                     propagateAttributes(
                         {
-                            sessionId: this.options.chatId,
+                            sessionId: langfuseSessionId,
                             userId: this.options.userId,
                             tags: ['openai-assistant']
                         },
@@ -1002,7 +1006,7 @@ export class AnalyticHandler {
                         }
                     )
                 })
-                if (this.options.chatId && rootSpan) rootSpan.setTraceIO({ input: { text: input } })
+                if (langfuseSessionId && rootSpan) rootSpan.setTraceIO({ input: { text: input } })
             } else {
                 rootSpan = this.handlers['langFuse'].trace[parentIds['langFuse'].trace]
             }
