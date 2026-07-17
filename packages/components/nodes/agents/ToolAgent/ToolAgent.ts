@@ -182,6 +182,7 @@ class ToolAgent_Agents implements INode {
 
             const invokeConfig: ICommonObject = {
                 callbacks: allCallbacks,
+                signal: (options.signal as AbortController | undefined)?.signal,
                 metadata: {
                     conversationId,
                     userId,
@@ -229,6 +230,7 @@ class ToolAgent_Agents implements INode {
 
             const invokeConfig: ICommonObject = {
                 callbacks: allCallbacks,
+                signal: (options.signal as AbortController | undefined)?.signal,
                 metadata: {
                     conversationId,
                     userId,

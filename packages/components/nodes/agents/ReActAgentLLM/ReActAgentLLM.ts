@@ -103,7 +103,10 @@ class ReActAgentLLM_Agents implements INode {
 
         const callbacks = await additionalCallbacks(nodeData, options)
 
-        const result = await executor.invoke({ input }, { callbacks })
+        const result = await executor.invoke({ input }, {
+            callbacks,
+            signal: (options.signal as AbortController | undefined)?.signal
+        })
 
         return result?.output
     }

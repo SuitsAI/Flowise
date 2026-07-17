@@ -773,6 +773,7 @@ export const executeFlow = async ({
             analytic: chatflow.analytic,
             uploads,
             prependMessages,
+            signal,
             ...(isStreamValid && { sseStreamer, shouldStreamResponse: isStreamValid }),
             evaluationRunId,
             updateStorageUsage,
@@ -783,7 +784,25 @@ export const executeFlow = async ({
         }
 
         /*** Run the ending node ***/
-        let result = await endingNodeInstance.run(endingNodeData, finalQuestion, runParams)
+        let result: any
+        try {
+            result = await endingNodeInstance.run(endingNodeData, finalQuestion, runParams)
+        } catch (e) {
+            // AbortController.abort() cancels LangChain OpenAI/Anthropic streams mid-request
+            if (getErrorMessage(e).includes('Aborted')) {
+                if (isStreamValid && sseStreamer) {
+                    sseStreamer.streamAbortEvent(chatId)
+                }
+                return {
+                    text: '',
+                    chatId,
+                    chatMessageId: apiMessageId,
+                    isStreamValid,
+                    aborted: true
+                }
+            }
+            throw e
+        }
 
         result = typeof result === 'string' ? { text: result } : result
 
@@ -1108,6 +1127,17 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
     } catch (e) {
         logger.error(`[server]:${organizationId}/${chatflow.id}/${chatId} Error:`, e)
         appServer.abortControllerPool.remove(`${chatflow.id}_${chatId}`)
+        if (getErrorMessage(e).includes('Aborted')) {
+            const sseStreamer = appServer.sseStreamer
+            if (sseStreamer) {
+                sseStreamer.streamAbortEvent(chatId)
+            }
+            return {
+                text: '',
+                chatId,
+                aborted: true
+            }
+        }
         incrementFailedMetricCounter(appServer.metricsProvider, isInternal, isAgentFlow)
         if (e instanceof InternalFlowiseError && e.statusCode === StatusCodes.UNAUTHORIZED) {
             throw e

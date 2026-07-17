@@ -3107,20 +3107,30 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                                             </IconButton>
                                         </InputAdornment>
                                     )}
-                                    {!isAgentCanvas && (
+                                    {!isAgentCanvas && !loading && (
                                         <InputAdornment position='end' sx={{ paddingRight: '15px' }}>
                                             <IconButton type='submit' disabled={getInputDisabled()} edge='end'>
-                                                {loading ? (
+                                                <IconSend
+                                                    color={getInputDisabled() ? '#9e9e9e' : customization.isDarkMode ? 'white' : '#1e88e5'}
+                                                />
+                                            </IconButton>
+                                        </InputAdornment>
+                                    )}
+                                    {!isAgentCanvas && loading && (
+                                        <InputAdornment position='end' sx={{ padding: '15px', mr: 1 }}>
+                                            <IconButton
+                                                edge='end'
+                                                title={isMessageStopping ? 'Stopping...' : 'Stop'}
+                                                style={{ border: !isMessageStopping ? '2px solid red' : 'none' }}
+                                                onClick={() => handleAbort()}
+                                                disabled={isMessageStopping}
+                                            >
+                                                {isMessageStopping ? (
                                                     <div>
-                                                        <CircularProgress color='inherit' size={20} />
+                                                        <CircularProgress color='error' size={20} />
                                                     </div>
                                                 ) : (
-                                                    // Send icon SVG in input field
-                                                    <IconSend
-                                                        color={
-                                                            getInputDisabled() ? '#9e9e9e' : customization.isDarkMode ? 'white' : '#1e88e5'
-                                                        }
-                                                    />
+                                                    <IconSquareFilled size={15} color='red' />
                                                 )}
                                             </IconButton>
                                         </InputAdornment>

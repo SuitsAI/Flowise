@@ -98,10 +98,16 @@ class POSTApiChain_Chains implements INode {
 
         if (shouldStreamResponse) {
             const handler = new CustomChainHandler(sseStreamer, chatId)
-            const res = await chain.run(input, [loggerHandler, handler, ...callbacks])
+            const res = await chain.run(input, {
+                callbacks: [loggerHandler, handler, ...callbacks],
+                signal: (options.signal as AbortController | undefined)?.signal
+            })
             return res
         } else {
-            const res = await chain.run(input, [loggerHandler, ...callbacks])
+            const res = await chain.run(input, {
+                callbacks: [loggerHandler, ...callbacks],
+                signal: (options.signal as AbortController | undefined)?.signal
+            })
             return res
         }
     }

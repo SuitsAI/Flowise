@@ -142,12 +142,14 @@ class ConversationChain_Chains implements INode {
             callbacks.push(new LCConsoleCallbackHandler())
         }
 
+        const abortSignal = (options.signal as AbortController | undefined)?.signal
+
         if (shouldStreamResponse) {
             const handler = new CustomChainHandler(sseStreamer, chatId)
             callbacks.push(handler)
-            res = await chain.invoke({ input }, { callbacks })
+            res = await chain.invoke({ input }, { callbacks, signal: abortSignal })
         } else {
-            res = await chain.invoke({ input }, { callbacks })
+            res = await chain.invoke({ input }, { callbacks, signal: abortSignal })
         }
 
         await memory.addChatMessages(

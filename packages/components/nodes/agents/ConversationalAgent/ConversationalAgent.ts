@@ -141,7 +141,13 @@ class ConversationalAgent_Agents implements INode {
 
         if (options.shouldStreamResponse) {
             const handler = new CustomChainHandler(shouldStreamResponse ? sseStreamer : undefined, chatId)
-            res = await executor.invoke({ input }, { callbacks: [loggerHandler, handler, ...callbacks] })
+            res = await executor.invoke(
+                { input },
+                {
+                    callbacks: [loggerHandler, handler, ...callbacks],
+                    signal: (options.signal as AbortController | undefined)?.signal
+                }
+            )
             if (res.sourceDocuments) {
                 if (options.sseStreamer) {
                     sseStreamer.streamSourceDocumentsEvent(options.chatId, flatten(res.sourceDocuments))
@@ -167,7 +173,13 @@ class ConversationalAgent_Agents implements INode {
                 sseStreamer.streamEndEvent(options.chatId)
             }
         } else {
-            res = await executor.invoke({ input }, { callbacks: [loggerHandler, ...callbacks] })
+            res = await executor.invoke(
+                { input },
+                {
+                    callbacks: [loggerHandler, ...callbacks],
+                    signal: (options.signal as AbortController | undefined)?.signal
+                }
+            )
             if (res.sourceDocuments) {
                 sourceDocuments = res.sourceDocuments
             }
