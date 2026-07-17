@@ -87,13 +87,13 @@ class RetrievalQAChain_Chains implements INode {
 
         if (shouldStreamResponse) {
             const handler = new CustomChainHandler(sseStreamer, chatId)
-            const res = await chain.call(obj, {
+            const res = await chain.invoke(obj, {
                 callbacks: [loggerHandler, handler, ...callbacks],
                 signal: (options.signal as AbortController | undefined)?.signal
             })
             return res?.text
         } else {
-            const res = await chain.call(obj, {
+            const res = await chain.invoke(obj, {
                 callbacks: [loggerHandler, ...callbacks],
                 signal: (options.signal as AbortController | undefined)?.signal
             })

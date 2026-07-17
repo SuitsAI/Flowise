@@ -97,13 +97,13 @@ class OpenApiChain_Chains implements INode {
             const res = await chain.run(input, {
                 callbacks: [loggerHandler, handler, ...callbacks],
                 signal: (options.signal as AbortController | undefined)?.signal
-            })
+            } as any)
             return res
         } else {
             const res = await chain.run(input, {
                 callbacks: [loggerHandler, ...callbacks],
                 signal: (options.signal as AbortController | undefined)?.signal
-            })
+            } as any)
             return res
         }
     }
