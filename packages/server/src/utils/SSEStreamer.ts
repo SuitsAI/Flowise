@@ -209,6 +209,9 @@ export class SSEStreamer implements IServerSideEventStreamer {
                 data: '[DONE]'
             }
             client.response.write('message\ndata:' + JSON.stringify(clientResponse) + '\n\n')
+            // Close immediately so prediction finally{removeClient} does not also emit "end"
+            client.response.end()
+            delete this.clients[chatId]
         }
     }
 

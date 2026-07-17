@@ -312,8 +312,14 @@ const abortChatMessage = async (req: Request, res: Response, next: NextFunction)
                 `Error: chatMessagesController.abortChatMessage - chatflowid or chatid not provided!`
             )
         }
-        await chatMessagesService.abortChatMessage(req.params.chatid, req.params.chatflowid)
-        return res.json({ status: 200, message: 'Chat message aborted' })
+        const result = await chatMessagesService.abortChatMessage(req.params.chatid, req.params.chatflowid)
+        const aborted = result.localAborted || result.broadcasted || result.queuePublished
+        return res.json({
+            status: 200,
+            message: aborted ? 'Chat message aborted' : 'Abort requested but no active controller found on this process',
+            aborted,
+            ...result
+        })
     } catch (error) {
         next(error)
     }

@@ -11,6 +11,7 @@ import { utilAddChatMessage } from '../../utils/addChatMesage'
 import { utilGetChatMessage } from '../../utils/getChatMessage'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import { updateStorageUsage } from '../../utils/quotaUsage'
+import logger from '../../utils/logger'
 
 // Add chatmessages for chatflowid
 const createChatMessage = async (chatMessage: Partial<IChatMessage>) => {
@@ -191,15 +192,60 @@ const abortChatMessage = async (chatId: string, chatflowid: string) => {
     try {
         const appServer = getRunningExpressApp()
         const id = `${chatflowid}_${chatId}`
+        const poolKeys = appServer.abortControllerPool.keys()
+        const mode = process.env.MODE || 'default'
+
+        logger.info(
+            `[abortChatMessage] request id=${id} chatflowid=${chatflowid} chatId=${chatId} mode=${mode} poolSize=${poolKeys.length} poolKeys=${JSON.stringify(
+                poolKeys
+            )}`
+        )
+
+        let localAborted = false
+        let broadcasted = false
+        let queuePublished = false
 
         if (process.env.MODE === MODE.QUEUE) {
             await appServer.queueManager.getPredictionQueueEventsProducer().publishEvent({
                 eventName: 'abort',
                 id
             })
+            queuePublished = true
+            // Also try local pool (main process may hold controllers in some setups)
+            localAborted = appServer.abortControllerPool.abort(id)
         } else {
-            appServer.abortControllerPool.abort(id)
+            localAborted = appServer.abortControllerPool.abort(id)
         }
+
+        // Fan-out to other web instances when Redis bus is available
+        if (appServer.abortRedisBus?.isEnabled()) {
+            broadcasted = await appServer.abortRedisBus.publish(id)
+        }
+
+        const result = {
+            id,
+            chatflowid,
+            chatId,
+            mode,
+            localAborted,
+            broadcasted,
+            queuePublished,
+            poolSize: poolKeys.length,
+            // Controllers present before this abort attempt (helps diagnose wrong-instance / missing key)
+            poolKeysBeforeAbort: poolKeys
+        }
+
+        if (!localAborted && !broadcasted && !queuePublished) {
+            logger.warn(
+                `[abortChatMessage] controller NOT FOUND for id=${id}. Abort is a no-op on this process. If running multiple instances without Redis/QUEUE, abort will not reach the prediction.`
+            )
+        } else {
+            logger.info(
+                `[abortChatMessage] result id=${id} localAborted=${localAborted} broadcasted=${broadcasted} queuePublished=${queuePublished}`
+            )
+        }
+
+        return result
     } catch (error) {
         throw new InternalFlowiseError(
             StatusCodes.INTERNAL_SERVER_ERROR,

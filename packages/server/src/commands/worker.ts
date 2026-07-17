@@ -54,7 +54,8 @@ export default class Worker extends BaseCommand {
         const queueEvents = new QueueEvents(predictionQueueName, { connection: queueManager.getConnection() })
 
         queueEvents.on<CustomListener>('abort', async ({ id }: { id: string }) => {
-            abortControllerPool.abort(id)
+            const found = abortControllerPool.abort(id)
+            logger.info(`[worker] abort event id=${id} found=${found} poolKeys=${JSON.stringify(abortControllerPool.keys())}`)
         })
 
         /** Upsertion */

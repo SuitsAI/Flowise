@@ -98,6 +98,7 @@ export class PredictionQueue extends BaseQueue {
             const signal = new AbortController()
             this.abortControllerPool.add(abortControllerId, signal)
             data.signal = signal
+            logger.info(`[PredictionQueue] AbortController registered id=${abortControllerId}`)
         }
 
         return await executeFlow(data)

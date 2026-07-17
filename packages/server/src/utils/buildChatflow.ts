@@ -1114,6 +1114,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
             const signal = new AbortController()
             appServer.abortControllerPool.add(abortControllerId, signal)
             executeData.signal = signal
+            logger.info(`[chatflow] AbortController registered id=${abortControllerId}`)
 
             logger.info(`[chatflow] Executing flow id=${chatflowid} chatId=${chatId}`)
             const result = await executeFlow(executeData)

@@ -12,6 +12,7 @@ import { NodesPool } from './NodesPool'
 import { ChatFlow } from './database/entities/ChatFlow'
 import { CachePool } from './CachePool'
 import { AbortControllerPool } from './AbortControllerPool'
+import { AbortRedisBus } from './AbortRedisBus'
 import { RateLimiterManager } from './utils/rateLimit'
 import { getAllowedIframeOrigins, getCorsOptions, sanitizeMiddleware } from './utils/XSS'
 import { Telemetry } from './utils/telemetry'
@@ -64,6 +65,7 @@ export class App {
     app: express.Application
     nodesPool: NodesPool
     abortControllerPool: AbortControllerPool
+    abortRedisBus: AbortRedisBus
     cachePool: CachePool
     telemetry: Telemetry
     rateLimiterManager: RateLimiterManager
@@ -102,6 +104,16 @@ export class App {
             // Initialize abort controllers pool
             this.abortControllerPool = new AbortControllerPool()
             logger.info('⏹️ [server]: Abort controllers pool initialized successfully')
+
+            // Cross-instance abort fan-out (needed when multiple web dynos share one URL)
+            this.abortRedisBus = new AbortRedisBus()
+            await this.abortRedisBus.connect((id) => {
+                const aborted = this.abortControllerPool.abort(id)
+                logger.info(`[AbortRedisBus] local abort id=${id} found=${aborted}`)
+            })
+            if (this.abortRedisBus.isEnabled()) {
+                logger.info('📡 [server]: Abort Redis bus connected successfully')
+            }
 
             // Initialize encryption key
             await getEncryptionKey()
