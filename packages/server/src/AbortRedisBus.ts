@@ -60,7 +60,7 @@ export class AbortRedisBus {
         return this.enabled
     }
 
-    async connect(onAbort: (id: string) => void): Promise<void> {
+    async connect(onAbort: (payload: { id?: string; chatId?: string }) => void): Promise<void> {
         if (!isRedisConfigured()) {
             logger.info('[AbortRedisBus] Redis not configured; cross-instance abort disabled')
             return
@@ -78,10 +78,10 @@ export class AbortRedisBus {
 
             await this.subscriber.subscribe(ABORT_REDIS_CHANNEL, (message: string) => {
                 try {
-                    const parsed = JSON.parse(message) as { id?: string }
-                    if (!parsed?.id) return
-                    logger.info(`[AbortRedisBus] received abort id=${parsed.id}`)
-                    onAbort(parsed.id)
+                    const parsed = JSON.parse(message) as { id?: string; chatId?: string }
+                    if (!parsed?.id && !parsed?.chatId) return
+                    logger.info(`[AbortRedisBus] received abort id=${parsed.id ?? ''} chatId=${parsed.chatId ?? ''}`)
+                    onAbort(parsed)
                 } catch (e) {
                     logger.error('[AbortRedisBus] failed to handle abort message:', e)
                 }
@@ -96,14 +96,15 @@ export class AbortRedisBus {
         }
     }
 
-    async publish(id: string): Promise<boolean> {
+    async publish(payload: { id?: string; chatId?: string }): Promise<boolean> {
         if (!this.enabled || !this.publisher) return false
+        if (!payload.id && !payload.chatId) return false
         try {
-            await this.publisher.publish(ABORT_REDIS_CHANNEL, JSON.stringify({ id }))
-            logger.info(`[AbortRedisBus] published abort id=${id}`)
+            await this.publisher.publish(ABORT_REDIS_CHANNEL, JSON.stringify(payload))
+            logger.info(`[AbortRedisBus] published abort id=${payload.id ?? ''} chatId=${payload.chatId ?? ''}`)
             return true
         } catch (e) {
-            logger.error(`[AbortRedisBus] publish failed id=${id}:`, e)
+            logger.error(`[AbortRedisBus] publish failed:`, e)
             return false
         }
     }

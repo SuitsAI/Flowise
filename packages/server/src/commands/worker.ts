@@ -12,6 +12,7 @@ import { initializeLangfuseTracing, flushLangfuseTracing } from 'flowise-compone
 
 interface CustomListener extends QueueEventsListener {
     abort: (args: { id: string }, id: string) => void
+    abortByChatId: (args: { chatId: string }, id: string) => void
 }
 
 export default class Worker extends BaseCommand {
@@ -56,6 +57,15 @@ export default class Worker extends BaseCommand {
         queueEvents.on<CustomListener>('abort', async ({ id }: { id: string }) => {
             const found = abortControllerPool.abort(id)
             logger.info(`[worker] abort event id=${id} found=${found} poolKeys=${JSON.stringify(abortControllerPool.keys())}`)
+        })
+
+        queueEvents.on<CustomListener>('abortByChatId', async ({ chatId }: { chatId: string }) => {
+            const abortedIds = abortControllerPool.abortByChatId(chatId)
+            logger.info(
+                `[worker] abortByChatId chatId=${chatId} aborted=${JSON.stringify(abortedIds)} poolKeys=${JSON.stringify(
+                    abortControllerPool.keys()
+                )}`
+            )
         })
 
         /** Upsertion */

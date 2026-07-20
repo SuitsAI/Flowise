@@ -107,9 +107,16 @@ export class App {
 
             // Cross-instance abort fan-out (needed when multiple web dynos share one URL)
             this.abortRedisBus = new AbortRedisBus()
-            await this.abortRedisBus.connect((id) => {
-                const aborted = this.abortControllerPool.abort(id)
-                logger.info(`[AbortRedisBus] local abort id=${id} found=${aborted}`)
+            await this.abortRedisBus.connect((payload) => {
+                if (payload.chatId) {
+                    const abortedIds = this.abortControllerPool.abortByChatId(payload.chatId)
+                    logger.info(
+                        `[AbortRedisBus] local abortByChatId chatId=${payload.chatId} aborted=${JSON.stringify(abortedIds)}`
+                    )
+                } else if (payload.id) {
+                    const aborted = this.abortControllerPool.abort(payload.id)
+                    logger.info(`[AbortRedisBus] local abort id=${payload.id} found=${aborted}`)
+                }
             })
             if (this.abortRedisBus.isEnabled()) {
                 logger.info('📡 [server]: Abort Redis bus connected successfully')

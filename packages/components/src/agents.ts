@@ -478,7 +478,10 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
                         if (tool) {
                             observation = await (tool as any).call(
                                 this.isXML && typeof action.toolInput === 'string' ? { input: action.toolInput } : action.toolInput,
-                                runManager?.getChild(),
+                                {
+                                    callbacks: runManager?.getChild(),
+                                    signal: config?.signal
+                                },
                                 undefined,
                                 {
                                     sessionId: this.sessionId,
@@ -660,7 +663,10 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
                      */
                     observation = await (tool as any).call(
                         this.isXML && typeof agentAction.toolInput === 'string' ? { input: agentAction.toolInput } : agentAction.toolInput,
-                        runManager?.getChild(),
+                        {
+                            callbacks: runManager?.getChild(),
+                            signal: config?.signal
+                        },
                         undefined,
                         {
                             sessionId: this.sessionId,

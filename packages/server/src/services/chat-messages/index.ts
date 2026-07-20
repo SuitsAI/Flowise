@@ -204,22 +204,29 @@ const abortChatMessage = async (chatId: string, chatflowid: string) => {
         let localAborted = false
         let broadcasted = false
         let queuePublished = false
+        let abortedIds: string[] = []
+
+        // Cascade: abort parent + any nested sub-chatflow controllers sharing this chatId
+        abortedIds = appServer.abortControllerPool.abortByChatId(chatId)
+        localAborted = abortedIds.length > 0
 
         if (process.env.MODE === MODE.QUEUE) {
-            await appServer.queueManager.getPredictionQueueEventsProducer().publishEvent({
+            const producer = appServer.queueManager.getPredictionQueueEventsProducer()
+            // Primary key (back-compat) + chatId cascade for workers that hold nested controllers
+            await producer.publishEvent({
                 eventName: 'abort',
                 id
             })
+            await producer.publishEvent({
+                eventName: 'abortByChatId',
+                chatId
+            })
             queuePublished = true
-            // Also try local pool (main process may hold controllers in some setups)
-            localAborted = appServer.abortControllerPool.abort(id)
-        } else {
-            localAborted = appServer.abortControllerPool.abort(id)
         }
 
         // Fan-out to other web instances when Redis bus is available
         if (appServer.abortRedisBus?.isEnabled()) {
-            broadcasted = await appServer.abortRedisBus.publish(id)
+            broadcasted = await appServer.abortRedisBus.publish({ chatId, id })
         }
 
         const result = {
@@ -228,6 +235,7 @@ const abortChatMessage = async (chatId: string, chatflowid: string) => {
             chatId,
             mode,
             localAborted,
+            abortedIds,
             broadcasted,
             queuePublished,
             poolSize: poolKeys.length,
@@ -237,11 +245,13 @@ const abortChatMessage = async (chatId: string, chatflowid: string) => {
 
         if (!localAborted && !broadcasted && !queuePublished) {
             logger.warn(
-                `[abortChatMessage] controller NOT FOUND for id=${id}. Abort is a no-op on this process. If running multiple instances without Redis/QUEUE, abort will not reach the prediction.`
+                `[abortChatMessage] controller NOT FOUND for chatId=${chatId} (id=${id}). Abort is a no-op on this process. If running multiple instances without Redis/QUEUE, abort will not reach the prediction.`
             )
         } else {
             logger.info(
-                `[abortChatMessage] result id=${id} localAborted=${localAborted} broadcasted=${broadcasted} queuePublished=${queuePublished}`
+                `[abortChatMessage] result id=${id} chatId=${chatId} localAborted=${localAborted} abortedIds=${JSON.stringify(
+                    abortedIds
+                )} broadcasted=${broadcasted} queuePublished=${queuePublished}`
             )
         }
 
