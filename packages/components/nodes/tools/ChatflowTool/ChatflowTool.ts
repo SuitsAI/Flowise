@@ -296,6 +296,11 @@ class ChatflowTool extends StructuredTool {
         if (config.runName === undefined) {
             config.runName = this.name
         }
+        // parseCallbackConfigArg returns BaseCallbackConfig which omits signal
+        const parentSignal =
+            configArg && !Array.isArray(configArg) && typeof configArg === 'object'
+                ? (configArg as RunnableConfig).signal
+                : undefined
         let parsed
         try {
             parsed = await parseWithTypeConversion(this.schema, arg)
@@ -322,7 +327,7 @@ class ChatflowTool extends StructuredTool {
         )
         let result
         try {
-            result = await this._call(parsed, runManager, flowConfig, config.signal)
+            result = await this._call(parsed, runManager, flowConfig, parentSignal)
         } catch (e) {
             await runManager?.handleToolError(e)
             throw e
