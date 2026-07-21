@@ -255,7 +255,8 @@ class ToolAgent_Agents implements INode {
             }
         } catch (e) {
             // Keep partial streamed output and continue so memory / chat history can be persisted
-            if (isAbortError(e)) {
+            const abortSignal = (options.signal as AbortController | undefined)?.signal
+            if (isAbortError(e, abortSignal)) {
                 wasAborted = true
                 const partialText =
                     (typeof options.streamState?.text === 'string' && options.streamState.text) ||
@@ -289,6 +290,8 @@ class ToolAgent_Agents implements INode {
         }
 
         const usedToolsToSave = (usedTools || []).filter((t: IUsedTool) => t.saveToMemory === true)
+        // Prefer runtime session (chatId) so Upstash Redis uses the same key as getChatMessages
+        const memorySessionId = this.sessionId || options.chatId
         await memory.addChatMessages(
             [
                 {
@@ -301,7 +304,7 @@ class ToolAgent_Agents implements INode {
                     ...(usedToolsToSave.length > 0 && { usedTools: usedToolsToSave })
                 }
             ],
-            this.sessionId
+            memorySessionId
         )
         
 
@@ -419,7 +422,8 @@ const prepareAgent = async (
             [inputKey]: (i: { input: string; steps: ToolsAgentStep[] }) => i.input,
             agent_scratchpad: (i: { input: string; steps: ToolsAgentStep[] }) => formatToOpenAIToolMessages(i.steps),
             [memoryKey]: async (_: { input: string; steps: ToolsAgentStep[] }) => {
-                const messages = (await memory.getChatMessages(flowObj?.sessionId, true, prependMessages)) as BaseMessage[]
+                const memorySessionId = flowObj?.sessionId || flowObj?.chatId
+                const messages = (await memory.getChatMessages(memorySessionId, true, prependMessages)) as BaseMessage[]
                 return messages ?? []
             },
             ...promptVariables
@@ -432,7 +436,7 @@ const prepareAgent = async (
     const executor = AgentExecutor.fromAgentAndTools({
         agent: runnableAgent,
         tools,
-        sessionId: flowObj?.sessionId,
+        sessionId: flowObj?.sessionId || flowObj?.chatId,
         chatId: flowObj?.chatId,
         input: flowObj?.input,
         verbose: process.env.DEBUG === 'true' ? true : false,

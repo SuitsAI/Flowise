@@ -18,7 +18,8 @@ import {
     removeSpecificFileFromUpload,
     EvaluationRunner,
     handleEscapeCharacters,
-    IServerSideEventStreamer
+    IServerSideEventStreamer,
+    isAbortError
 } from 'flowise-components'
 import { StatusCodes } from 'http-status-codes'
 import {
@@ -842,7 +843,7 @@ export const executeFlow = async ({
         } catch (e) {
             // AbortController.abort() cancels LangChain OpenAI/Anthropic streams mid-request.
             // Keep whatever was already streamed, persist memory + chat messages, then finish the flow.
-            if (getErrorMessage(e).includes('Aborted')) {
+            if (isAbortError(e, signal?.signal)) {
                 wasAborted = true
                 const partialText = streamState.text || ''
                 try {
@@ -1189,7 +1190,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
     } catch (e) {
         logger.error(`[server]:${organizationId}/${chatflow.id}/${chatId} Error:`, e)
         appServer.abortControllerPool.remove(`${chatflow.id}_${chatId}`)
-        if (getErrorMessage(e).includes('Aborted')) {
+        if (isAbortError(e)) {
             const sseStreamer = appServer.sseStreamer
             if (sseStreamer) {
                 sseStreamer.streamAbortEvent(chatId)
