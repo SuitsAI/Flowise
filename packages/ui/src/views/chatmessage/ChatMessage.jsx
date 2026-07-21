@@ -596,6 +596,16 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         })
     }
 
+    const replaceLastMessage = (text) => {
+        setMessages((prevMessages) => {
+            let allMessages = [...cloneDeep(prevMessages)]
+            if (allMessages[allMessages.length - 1].type === 'userMessage') return allMessages
+            allMessages[allMessages.length - 1].message = text ?? ''
+            allMessages[allMessages.length - 1].feedback = null
+            return allMessages
+        })
+    }
+
     const updateErrorMessage = (errorMessage) => {
         setMessages((prevMessages) => {
             let allMessages = [...cloneDeep(prevMessages)]
@@ -877,6 +887,11 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
             })
         }
 
+        // Abort can drop the last SSE token frames; reconcile UI with the text saved to memory
+        if (data.aborted && typeof data.text === 'string') {
+            replaceLastMessage(data.text)
+        }
+
         if (data.chatId) {
             setChatId(data.chatId)
         }
@@ -1143,6 +1158,9 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                         updateErrorMessage(payload.data)
                         break
                     case 'abort':
+                        if (payload.data && typeof payload.data === 'object' && typeof payload.data.text === 'string') {
+                            replaceLastMessage(payload.data.text)
+                        }
                         abortMessage(payload.data)
                         closeResponse()
                         break

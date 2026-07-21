@@ -79,7 +79,9 @@ const createPrediction = async (req: Request, res: Response, next: NextFunction)
                     const apiResponse = await predictionsServices.buildChatflow(req)
                     sseStreamer.streamMetadataEvent(apiResponse.chatId, apiResponse)
                     if (apiResponse?.aborted) {
-                        sseStreamer.streamAbortEvent(apiResponse.chatId)
+                        sseStreamer.streamAbortEvent(apiResponse.chatId, {
+                            text: typeof apiResponse.text === 'string' ? apiResponse.text : ''
+                        })
                     }
                 } catch (error) {
                     if (chatId) {
