@@ -58,6 +58,9 @@ const createAndStreamInternalPrediction = async (req: Request, res: Response, ne
         const apiResponse = await utilBuildChatflow(req, true)
         logger.info(`[prediction] Stream chatflow finished chatId=${chatId}`)
         sseStreamer.streamMetadataEvent(apiResponse.chatId, apiResponse)
+        if (apiResponse?.aborted) {
+            sseStreamer.streamAbortEvent(apiResponse.chatId)
+        }
     } catch (error) {
         logger.error(`[prediction] Stream error chatId=${chatId}: ${getErrorMessage(error)}`)
         if (chatId) {

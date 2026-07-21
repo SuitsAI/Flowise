@@ -23,3 +23,11 @@ const toErrorWithMessage = (maybeError: unknown): ErrorWithMessage => {
 export const getErrorMessage = (error: unknown) => {
     return toErrorWithMessage(error).message
 }
+
+/** True when an AbortController / LangChain abort cancelled the run */
+export const isAbortError = (error: unknown): boolean => {
+    if (!error) return false
+    const name = typeof error === 'object' && error !== null && 'name' in error ? String((error as { name?: unknown }).name) : ''
+    if (name === 'AbortError') return true
+    return getErrorMessage(error).includes('Aborted')
+}

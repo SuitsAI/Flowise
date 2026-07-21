@@ -26,6 +26,7 @@ import {
 } from '../../../src/Interface'
 import { ConsoleCallbackHandler, CustomChainHandler, CustomStreamingHandler, additionalCallbacks } from '../../../src/handler'
 import { AgentExecutor, ToolCallingAgentOutputParser } from '../../../src/agents'
+import { isAbortError } from '../../../src/error'
 import { Moderation, checkInputs, streamResponse } from '../../moderation/Moderation'
 import { formatResponse } from '../../outputparsers/OutputParserHelpers'
 import { addImagesToMessages, llmSupportsVision } from '../../../src/multiModalUtils'
@@ -170,83 +171,99 @@ class ToolAgent_Agents implements INode {
         let sourceDocuments: ICommonObject[] = []
         let usedTools: IUsedTool[] = []
         let artifacts = []
+        let wasAborted = false
+        let streamHandler: CustomChainHandler | undefined
 
-        if (shouldStreamResponse) {
-            const handler = new CustomChainHandler(sseStreamer, chatId)
-            const allCallbacks = [loggerHandler, handler, ...callbacks]
+        try {
+            if (shouldStreamResponse) {
+                streamHandler = new CustomChainHandler(sseStreamer, chatId)
+                const allCallbacks = [loggerHandler, streamHandler, ...callbacks]
 
-            // Add detailed streaming handler if enabled
-            if (enableDetailedStreaming && customStreamingHandler) {
-                allCallbacks.push(customStreamingHandler)
-            }
+                // Add detailed streaming handler if enabled
+                if (enableDetailedStreaming && customStreamingHandler) {
+                    allCallbacks.push(customStreamingHandler)
+                }
 
-            const invokeConfig: ICommonObject = {
-                callbacks: allCallbacks,
-                signal: (options.signal as AbortController | undefined)?.signal,
-                metadata: {
-                    conversationId,
-                    userId,
-                    orgId,
-                    sessionId
-                }
-            }
-            res = await executor.invoke({ input }, invokeConfig)
-            if (res.sourceDocuments) {
-                if (sseStreamer) {
-                    sseStreamer.streamSourceDocumentsEvent(chatId, flatten(res.sourceDocuments))
-                }
-                sourceDocuments = res.sourceDocuments
-            }
-            if (res.usedTools) {
-                if (sseStreamer) {
-                    sseStreamer.streamUsedToolsEvent(chatId, flatten(res.usedTools))
-                }
-                usedTools = res.usedTools
-            }
-            if (res.artifacts) {
-                if (sseStreamer) {
-                    sseStreamer.streamArtifactsEvent(chatId, flatten(res.artifacts))
-                }
-                artifacts = res.artifacts
-            }
-            // If the tool is set to returnDirect, stream the output to the client
-            if (res.usedTools && res.usedTools.length) {
-                let inputTools = nodeData.inputs?.tools
-                inputTools = flatten(inputTools)
-                for (const tool of res.usedTools) {
-                    const inputTool = inputTools.find((inputTool: Tool) => inputTool.name === tool.tool)
-                    if (inputTool && inputTool.returnDirect && shouldStreamResponse) {
-                        sseStreamer.streamTokenEvent(chatId, tool.toolOutput)
+                const invokeConfig: ICommonObject = {
+                    callbacks: allCallbacks,
+                    signal: (options.signal as AbortController | undefined)?.signal,
+                    metadata: {
+                        conversationId,
+                        userId,
+                        orgId,
+                        sessionId
                     }
                 }
-            }
-        } else {
-            const allCallbacks = [loggerHandler, ...callbacks]
+                res = await executor.invoke({ input }, invokeConfig)
+                if (res.sourceDocuments) {
+                    if (sseStreamer) {
+                        sseStreamer.streamSourceDocumentsEvent(chatId, flatten(res.sourceDocuments))
+                    }
+                    sourceDocuments = res.sourceDocuments
+                }
+                if (res.usedTools) {
+                    if (sseStreamer) {
+                        sseStreamer.streamUsedToolsEvent(chatId, flatten(res.usedTools))
+                    }
+                    usedTools = res.usedTools
+                }
+                if (res.artifacts) {
+                    if (sseStreamer) {
+                        sseStreamer.streamArtifactsEvent(chatId, flatten(res.artifacts))
+                    }
+                    artifacts = res.artifacts
+                }
+                // If the tool is set to returnDirect, stream the output to the client
+                if (res.usedTools && res.usedTools.length) {
+                    let inputTools = nodeData.inputs?.tools
+                    inputTools = flatten(inputTools)
+                    for (const tool of res.usedTools) {
+                        const inputTool = inputTools.find((inputTool: Tool) => inputTool.name === tool.tool)
+                        if (inputTool && inputTool.returnDirect && shouldStreamResponse) {
+                            sseStreamer.streamTokenEvent(chatId, tool.toolOutput)
+                        }
+                    }
+                }
+            } else {
+                const allCallbacks = [loggerHandler, ...callbacks]
 
-            // Add detailed streaming handler if enabled
-            if (enableDetailedStreaming && customStreamingHandler) {
-                allCallbacks.push(customStreamingHandler)
-            }
+                // Add detailed streaming handler if enabled
+                if (enableDetailedStreaming && customStreamingHandler) {
+                    allCallbacks.push(customStreamingHandler)
+                }
 
-            const invokeConfig: ICommonObject = {
-                callbacks: allCallbacks,
-                signal: (options.signal as AbortController | undefined)?.signal,
-                metadata: {
-                    conversationId,
-                    userId,
-                    orgId,
-                    sessionId
+                const invokeConfig: ICommonObject = {
+                    callbacks: allCallbacks,
+                    signal: (options.signal as AbortController | undefined)?.signal,
+                    metadata: {
+                        conversationId,
+                        userId,
+                        orgId,
+                        sessionId
+                    }
+                }
+                res = await executor.invoke({ input }, invokeConfig)
+                if (res.sourceDocuments) {
+                    sourceDocuments = res.sourceDocuments
+                }
+                if (res.usedTools) {
+                    usedTools = res.usedTools
+                }
+                if (res.artifacts) {
+                    artifacts = res.artifacts
                 }
             }
-            res = await executor.invoke({ input }, invokeConfig)
-            if (res.sourceDocuments) {
-                sourceDocuments = res.sourceDocuments
-            }
-            if (res.usedTools) {
-                usedTools = res.usedTools
-            }
-            if (res.artifacts) {
-                artifacts = res.artifacts
+        } catch (e) {
+            // Keep partial streamed output and continue so memory / chat history can be persisted
+            if (isAbortError(e)) {
+                wasAborted = true
+                const partialText =
+                    (typeof options.streamState?.text === 'string' && options.streamState.text) ||
+                    streamHandler?.streamedText ||
+                    ''
+                res = { output: partialText }
+            } else {
+                throw e
             }
         }
 
@@ -264,7 +281,7 @@ class ToolAgent_Agents implements INode {
         // Claude 3 Opus tends to spit out <thinking>..</thinking> as well, discard that in final output
         // https://docs.anthropic.com/en/docs/build-with-claude/tool-use#chain-of-thought
         const regexPattern: RegExp = /<thinking>[\s\S]*?<\/thinking>/
-        const matches: RegExpMatchArray | null = output.match(regexPattern)
+        const matches: RegExpMatchArray | null = typeof output === 'string' ? output.match(regexPattern) : null
         if (matches) {
             for (const match of matches) {
                 output = output.replace(match, '')
@@ -288,20 +305,24 @@ class ToolAgent_Agents implements INode {
         )
         
 
-        let finalRes = output
+        let finalRes: string | ICommonObject = output
 
         if (sourceDocuments.length || usedTools.length || artifacts.length) {
-            const finalRes: ICommonObject = { text: output }
+            const richRes: ICommonObject = { text: output }
             if (sourceDocuments.length) {
-                finalRes.sourceDocuments = flatten(sourceDocuments)
+                richRes.sourceDocuments = flatten(sourceDocuments)
             }
             if (usedTools.length) {
-                finalRes.usedTools = usedTools
+                richRes.usedTools = usedTools
             }
             if (artifacts.length) {
-                finalRes.artifacts = artifacts
+                richRes.artifacts = artifacts
             }
-            return finalRes
+            finalRes = richRes
+        }
+
+        if (wasAborted) {
+            return typeof finalRes === 'object' ? { ...finalRes, aborted: true } : { text: finalRes, aborted: true }
         }
 
         return finalRes
