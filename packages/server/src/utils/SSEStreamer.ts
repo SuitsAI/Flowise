@@ -209,14 +209,13 @@ export class SSEStreamer implements IServerSideEventStreamer {
                 data
             }
             client.response.write('message:\ndata:' + JSON.stringify(clientResponse) + '\n\n')
-            // Ensure prior token/metadata frames are flushed before closing
             const res = client.response as any
             if (typeof res.flush === 'function') {
                 res.flush()
             }
-            // Close immediately so prediction finally{removeClient} does not also emit "end"
-            client.response.end()
-            delete this.clients[chatId]
+            // Do not end()/delete here. Controllers call removeClient() in finally, which
+            // emits "end" and closes. Ending here raced the last frames for some clients
+            // (axios/Node streams, custom FlowiseSDK parsers).
         }
     }
 
