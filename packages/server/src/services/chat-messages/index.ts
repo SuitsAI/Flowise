@@ -11,6 +11,7 @@ import { utilAddChatMessage } from '../../utils/addChatMesage'
 import { utilGetChatMessage } from '../../utils/getChatMessage'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import { updateStorageUsage } from '../../utils/quotaUsage'
+import logger from '../../utils/logger'
 
 // Add chatmessages for chatflowid
 const createChatMessage = async (chatMessage: Partial<IChatMessage>) => {
@@ -191,15 +192,70 @@ const abortChatMessage = async (chatId: string, chatflowid: string) => {
     try {
         const appServer = getRunningExpressApp()
         const id = `${chatflowid}_${chatId}`
+        const poolKeys = appServer.abortControllerPool.keys()
+        const mode = process.env.MODE || 'default'
+
+        logger.info(
+            `[abortChatMessage] request id=${id} chatflowid=${chatflowid} chatId=${chatId} mode=${mode} poolSize=${poolKeys.length} poolKeys=${JSON.stringify(
+                poolKeys
+            )}`
+        )
+
+        let localAborted = false
+        let broadcasted = false
+        let queuePublished = false
+        let abortedIds: string[] = []
+
+        // Cascade: abort parent + any nested sub-chatflow controllers sharing this chatId
+        abortedIds = appServer.abortControllerPool.abortByChatId(chatId)
+        localAborted = abortedIds.length > 0
 
         if (process.env.MODE === MODE.QUEUE) {
-            await appServer.queueManager.getPredictionQueueEventsProducer().publishEvent({
+            const producer = appServer.queueManager.getPredictionQueueEventsProducer()
+            // Primary key (back-compat) + chatId cascade for workers that hold nested controllers
+            await producer.publishEvent({
                 eventName: 'abort',
                 id
             })
-        } else {
-            appServer.abortControllerPool.abort(id)
+            await producer.publishEvent({
+                eventName: 'abortByChatId',
+                chatId
+            })
+            queuePublished = true
         }
+
+        // Fan-out to other web instances when Redis bus is available
+        if (appServer.abortRedisBus?.isEnabled()) {
+            broadcasted = await appServer.abortRedisBus.publish({ chatId, id })
+        }
+
+        const result = {
+            id,
+            chatflowid,
+            chatId,
+            mode,
+            localAborted,
+            abortedIds,
+            broadcasted,
+            queuePublished,
+            poolSize: poolKeys.length,
+            // Controllers present before this abort attempt (helps diagnose wrong-instance / missing key)
+            poolKeysBeforeAbort: poolKeys
+        }
+
+        if (!localAborted && !broadcasted && !queuePublished) {
+            logger.warn(
+                `[abortChatMessage] controller NOT FOUND for chatId=${chatId} (id=${id}). Abort is a no-op on this process. If running multiple instances without Redis/QUEUE, abort will not reach the prediction.`
+            )
+        } else {
+            logger.info(
+                `[abortChatMessage] result id=${id} chatId=${chatId} localAborted=${localAborted} abortedIds=${JSON.stringify(
+                    abortedIds
+                )} broadcasted=${broadcasted} queuePublished=${queuePublished}`
+            )
+        }
+
+        return result
     } catch (error) {
         throw new InternalFlowiseError(
             StatusCodes.INTERNAL_SERVER_ERROR,

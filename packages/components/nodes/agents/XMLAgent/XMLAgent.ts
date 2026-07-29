@@ -144,10 +144,11 @@ class XMLAgent_Agents implements INode {
         let res: ChainValues = {}
         let sourceDocuments: ICommonObject[] = []
         let usedTools: IUsedTool[] = []
+        const abortSignal = (options.signal as AbortController | undefined)?.signal
 
         if (shouldStreamResponse) {
             const handler = new CustomChainHandler(sseStreamer, chatId)
-            res = await executor.invoke({ input }, { callbacks: [loggerHandler, handler, ...callbacks] })
+            res = await executor.invoke({ input }, { callbacks: [loggerHandler, handler, ...callbacks], signal: abortSignal })
             if (res.sourceDocuments) {
                 if (sseStreamer) {
                     sseStreamer.streamSourceDocumentsEvent(chatId, flatten(res.sourceDocuments))
@@ -174,7 +175,7 @@ class XMLAgent_Agents implements INode {
                 }
             }
         } else {
-            res = await executor.invoke({ input }, { callbacks: [loggerHandler, ...callbacks] })
+            res = await executor.invoke({ input }, { callbacks: [loggerHandler, ...callbacks], signal: abortSignal })
             if (res.sourceDocuments) {
                 sourceDocuments = res.sourceDocuments
             }

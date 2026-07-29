@@ -320,14 +320,14 @@ export class RedisEventPublisher implements IServerSideEventStreamer {
         }
     }
 
-    streamAbortEvent(chatId: string): void {
+    streamAbortEvent(chatId: string, data: any = '[DONE]'): void {
         try {
             this.redisPublisher.publish(
                 chatId,
                 JSON.stringify({
                     chatId,
                     eventType: 'abort',
-                    data: '[DONE]'
+                    data
                 })
             )
         } catch (error) {
@@ -371,6 +371,12 @@ export class RedisEventPublisher implements IServerSideEventStreamer {
             }
             if (apiResponse.memoryType) {
                 metadataJson['memoryType'] = apiResponse.memoryType
+            }
+            if (apiResponse.aborted) {
+                metadataJson['aborted'] = true
+                if (typeof apiResponse.text === 'string') {
+                    metadataJson['text'] = apiResponse.text
+                }
             }
             if (Object.keys(metadataJson).length > 0) {
                 this.streamCustomEvent(chatId, 'metadata', metadataJson)

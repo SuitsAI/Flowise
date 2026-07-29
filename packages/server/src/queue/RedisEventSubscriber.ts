@@ -152,7 +152,7 @@ export class RedisEventSubscriber {
                 this.sseStreamer.streamActionEvent(chatId, data)
                 break
             case 'abort':
-                this.sseStreamer.streamAbortEvent(chatId)
+                this.sseStreamer.streamAbortEvent(chatId, data)
                 break
             case 'error':
                 this.sseStreamer.streamErrorEvent(chatId, data)

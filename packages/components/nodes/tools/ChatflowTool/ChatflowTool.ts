@@ -296,6 +296,11 @@ class ChatflowTool extends StructuredTool {
         if (config.runName === undefined) {
             config.runName = this.name
         }
+        // parseCallbackConfigArg returns BaseCallbackConfig which omits signal
+        const parentSignal =
+            configArg && !Array.isArray(configArg) && typeof configArg === 'object'
+                ? (configArg as RunnableConfig).signal
+                : undefined
         let parsed
         try {
             parsed = await parseWithTypeConversion(this.schema, arg)
@@ -322,7 +327,7 @@ class ChatflowTool extends StructuredTool {
         )
         let result
         try {
-            result = await this._call(parsed, runManager, flowConfig)
+            result = await this._call(parsed, runManager, flowConfig, parentSignal)
         } catch (e) {
             await runManager?.handleToolError(e)
             throw e
@@ -338,13 +343,15 @@ class ChatflowTool extends StructuredTool {
     protected async _call(
         arg: z.infer<typeof this.schema>,
         _?: CallbackManagerForToolRun,
-        flowConfig?: { sessionId?: string; chatId?: string; input?: string }
+        flowConfig?: { sessionId?: string; chatId?: string; input?: string },
+        parentSignal?: AbortSignal
     ): Promise<string> {
         const inputQuestion = this.input || arg.input
 
+        const nestedChatId = this.startNewSession ? uuidv4() : flowConfig?.chatId
         const body = {
             question: inputQuestion,
-            chatId: this.startNewSession ? uuidv4() : flowConfig?.chatId,
+            chatId: nestedChatId,
             overrideConfig: {
                 sessionId: this.startNewSession ? uuidv4() : flowConfig?.sessionId,
                 ...(this.overrideConfig ?? {}),
@@ -355,7 +362,31 @@ class ChatflowTool extends StructuredTool {
         const url = `${this.baseURL}/api/v1/prediction/${this.chatflowid}`
         const timeoutMs = getSandboxTimeoutMs()
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+        const timeoutId = setTimeout(() => controller.abort('timeout'), timeoutMs)
+
+        const abortNested = async () => {
+            if (!nestedChatId) return
+            try {
+                await secureFetch(`${this.baseURL}/api/v1/chatmessage/abort/${this.chatflowid}/${encodeURIComponent(nestedChatId)}`, {
+                    method: 'PUT',
+                    headers: {
+                        ...(this.headers as Record<string, string>)
+                    }
+                } as any)
+            } catch (e) {
+                // Best-effort: parent abort / timeout should still surface to the caller
+                console.error('ChatflowTool failed to abort nested chatflow:', e)
+            }
+        }
+
+        const onParentAbort = () => {
+            void abortNested()
+            controller.abort('parent')
+        }
+        if (parentSignal) {
+            if (parentSignal.aborted) onParentAbort()
+            else parentSignal.addEventListener('abort', onParentAbort, { once: true })
+        }
 
         try {
             const fetchResponse = await secureFetch(url, {
@@ -378,6 +409,11 @@ class ChatflowTool extends StructuredTool {
                 text?: string
                 chatId?: string
                 artifacts?: { data?: string; name?: string }[]
+                aborted?: boolean
+            }
+
+            if (resp.aborted) {
+                throw new Error('Aborted')
             }
 
             let result = resp.text || ''
@@ -404,6 +440,11 @@ class ChatflowTool extends StructuredTool {
             return result
         } catch (e) {
             if (e instanceof Error && e.name === 'AbortError') {
+                const reason = (controller.signal as any).reason
+                if (reason === 'parent' || parentSignal?.aborted) {
+                    throw new Error('Aborted')
+                }
+                void abortNested()
                 throw new Error(
                     `ChatflowTool prediction timed out after ${timeoutMs}ms (SANDBOX_TIMEOUT). Nested chatflow may still be running on the server.`
                 )
@@ -411,6 +452,7 @@ class ChatflowTool extends StructuredTool {
             throw e instanceof Error ? e : new Error(String(e))
         } finally {
             clearTimeout(timeoutId)
+            if (parentSignal) parentSignal.removeEventListener('abort', onParentAbort)
         }
     }
 }

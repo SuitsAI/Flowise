@@ -225,9 +225,10 @@ class GraphCypherQA_Chain implements INode {
 
         try {
             let response
+            const abortSignal = (options.signal as AbortController | undefined)?.signal
             if (shouldStreamResponse) {
                 if (returnDirect) {
-                    response = await chain.invoke(obj, { callbacks })
+                    response = await chain.invoke(obj, { callbacks, signal: abortSignal })
                     let result = response?.result
                     if (typeof result === 'object') {
                         result = '```json\n' + JSON.stringify(result, null, 2)
@@ -238,14 +239,17 @@ class GraphCypherQA_Chain implements INode {
                 } else {
                     const handler = new CustomChainHandler(sseStreamer, chatId, 2)
                     callbacks.push(handler)
-                    response = await chain.invoke(obj, { callbacks })
+                    response = await chain.invoke(obj, { callbacks, signal: abortSignal })
                 }
             } else {
-                response = await chain.invoke(obj, { callbacks })
+                response = await chain.invoke(obj, { callbacks, signal: abortSignal })
             }
 
             return formatResponse(response?.result)
-        } catch (error) {
+        } catch (error: any) {
+            if (typeof error?.message === 'string' && error.message.includes('Aborted')) {
+                throw error
+            }
             console.error('Error in GraphCypherQAChain:', error)
             if (shouldStreamResponse) {
                 streamResponse(sseStreamer, chatId, error.message)

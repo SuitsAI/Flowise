@@ -233,7 +233,7 @@ class ConversationalRetrievalQAChain_Chains implements INode {
 
         const stream = answerChain.streamLog(
             { question: input, chat_history: history },
-            { callbacks },
+            { callbacks, signal: (options.signal as AbortController | undefined)?.signal },
             {
                 includeNames: [sourceRunnableName]
             }
@@ -245,6 +245,9 @@ class ConversationalRetrievalQAChain_Chains implements INode {
         let isStreamingStarted = false
 
         for await (const chunk of stream) {
+            if ((options.signal as AbortController | undefined)?.signal?.aborted) {
+                throw new Error('Aborted')
+            }
             streamedResponse = applyPatch(streamedResponse, chunk.ops).newDocument
 
             if (streamedResponse.final_output) {

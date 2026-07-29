@@ -398,6 +398,8 @@ export class CustomChainHandler extends BaseCallbackHandler {
     cachedResponse = true
     chatId: string = ''
     sseStreamer: IServerSideEventStreamer | undefined
+    /** Accumulated user-visible streamed text (excludes tool-call / reasoning-only deltas) */
+    streamedText: string = ''
 
     constructor(sseStreamer: IServerSideEventStreamer | undefined, chatId: string, skipK?: number, returnSourceDocuments?: boolean) {
         super()
@@ -444,8 +446,11 @@ export class CustomChainHandler extends BaseCallbackHandler {
                     this.sseStreamer.streamLLMReasoningEvent(this.chatId, reasoningDelta)
                 }
                 if (textDelta) {
+                    this.streamedText += textDelta
                     this.sseStreamer.streamTokenEvent(this.chatId, textDelta)
                 }
+            } else if (textDelta) {
+                this.streamedText += textDelta
             }
         }
     }
@@ -472,6 +477,7 @@ export class CustomChainHandler extends BaseCallbackHandler {
                         this.sseStreamer.streamStartEvent(this.chatId, token)
                     }
                 }
+                this.streamedText += token
                 if (this.sseStreamer) {
                     this.sseStreamer.streamTokenEvent(this.chatId, token)
                 }
