@@ -7,6 +7,7 @@ dotenv.config({ path: envPath, override: true })
 export * from './Interface'
 export * from './streamingReasoning'
 export * from './utils'
+export * from './error'
 export * from './speechToText'
 export * from './textToSpeech'
 export * from './storageUtils'

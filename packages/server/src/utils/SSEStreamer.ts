@@ -201,14 +201,21 @@ export class SSEStreamer implements IServerSideEventStreamer {
         }
     }
 
-    streamAbortEvent(chatId: string): void {
+    streamAbortEvent(chatId: string, data: any = '[DONE]'): void {
         const client = this.clients[chatId]
         if (client) {
             const clientResponse = {
                 event: 'abort',
-                data: '[DONE]'
+                data
             }
-            client.response.write('message\ndata:' + JSON.stringify(clientResponse) + '\n\n')
+            client.response.write('message:\ndata:' + JSON.stringify(clientResponse) + '\n\n')
+            const res = client.response as any
+            if (typeof res.flush === 'function') {
+                res.flush()
+            }
+            // Do not end()/delete here. Controllers call removeClient() in finally, which
+            // emits "end" and closes. Ending here raced the last frames for some clients
+            // (axios/Node streams, custom FlowiseSDK parsers).
         }
     }
 
@@ -252,6 +259,14 @@ export class SSEStreamer implements IServerSideEventStreamer {
         if (apiResponse.flowVariables) {
             metadataJson['flowVariables'] =
                 typeof apiResponse.flowVariables === 'string' ? JSON.parse(apiResponse.flowVariables) : apiResponse.flowVariables
+        }
+        // On abort, send the authoritative partial text so the client can catch up with
+        // any token frames that were dropped when the stream was cancelled.
+        if (apiResponse.aborted) {
+            metadataJson['aborted'] = true
+            if (typeof apiResponse.text === 'string') {
+                metadataJson['text'] = apiResponse.text
+            }
         }
         if (Object.keys(metadataJson).length > 0) {
             this.streamCustomEvent(chatId, 'metadata', metadataJson)

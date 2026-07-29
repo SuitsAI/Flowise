@@ -176,6 +176,7 @@ const runPrediction = async (
     const shouldStreamResponse = !disableStreaming && options.shouldStreamResponse
     const sseStreamer: IServerSideEventStreamer = options.sseStreamer as IServerSideEventStreamer
     const chatId = options.chatId
+    const abortSignal = (options.signal as AbortController | undefined)?.signal
 
     if (moderations && moderations.length > 0) {
         try {
@@ -256,43 +257,63 @@ const runPrediction = async (
 
         if (seen.length === 0) {
             // All inputVariables have fixed values specified
-            const options = { ...promptValues }
+            const promptOptions = { ...promptValues }
             if (shouldStreamResponse) {
                 const handler = new CustomChainHandler(sseStreamer, chatId)
-                const res = await chain.call(options, [loggerHandler, handler, ...callbacks])
+                const res = await chain.invoke(promptOptions, {
+                    callbacks: [loggerHandler, handler, ...callbacks],
+                    signal: abortSignal
+                })
                 return formatResponse(res?.text)
             } else {
-                const res = await chain.call(options, [loggerHandler, ...callbacks])
+                const res = await chain.invoke(promptOptions, {
+                    callbacks: [loggerHandler, ...callbacks],
+                    signal: abortSignal
+                })
                 return formatResponse(res?.text)
             }
         } else if (seen.length === 1) {
             // If one inputVariable is not specify, use input (user's question) as value
             const lastValue = seen.pop()
             if (!lastValue) throw new Error('Please provide Prompt Values')
-            const options = {
+            const promptOptions = {
                 ...promptValues,
                 [lastValue]: input
             }
             if (shouldStreamResponse) {
                 const handler = new CustomChainHandler(sseStreamer, chatId)
-                const res = await chain.call(options, [loggerHandler, handler, ...callbacks])
+                const res = await chain.invoke(promptOptions, {
+                    callbacks: [loggerHandler, handler, ...callbacks],
+                    signal: abortSignal
+                })
                 return formatResponse(res?.text)
             } else {
-                const res = await chain.call(options, [loggerHandler, ...callbacks])
+                const res = await chain.invoke(promptOptions, {
+                    callbacks: [loggerHandler, ...callbacks],
+                    signal: abortSignal
+                })
                 return formatResponse(res?.text)
             }
         } else {
             throw new Error(`Please provide Prompt Values for: ${seen.join(', ')}`)
         }
     } else {
+        const runInput =
+            inputVariables.length === 1 ? { [inputVariables[0]]: input } : ({ input } as ICommonObject)
         if (shouldStreamResponse) {
             const handler = new CustomChainHandler(sseStreamer, chatId)
 
-            const res = await chain.run(input, [loggerHandler, handler, ...callbacks])
-            return formatResponse(res)
+            const res = await chain.invoke(runInput, {
+                callbacks: [loggerHandler, handler, ...callbacks],
+                signal: abortSignal
+            })
+            return formatResponse(res?.text ?? res)
         } else {
-            const res = await chain.run(input, [loggerHandler, ...callbacks])
-            return formatResponse(res)
+            const res = await chain.invoke(runInput, {
+                callbacks: [loggerHandler, ...callbacks],
+                signal: abortSignal
+            })
+            return formatResponse(res?.text ?? res)
         }
     }
 }

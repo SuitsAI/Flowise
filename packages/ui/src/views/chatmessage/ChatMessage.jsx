@@ -596,6 +596,16 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         })
     }
 
+    const replaceLastMessage = (text) => {
+        setMessages((prevMessages) => {
+            let allMessages = [...cloneDeep(prevMessages)]
+            if (allMessages[allMessages.length - 1].type === 'userMessage') return allMessages
+            allMessages[allMessages.length - 1].message = text ?? ''
+            allMessages[allMessages.length - 1].feedback = null
+            return allMessages
+        })
+    }
+
     const updateErrorMessage = (errorMessage) => {
         setMessages((prevMessages) => {
             let allMessages = [...cloneDeep(prevMessages)]
@@ -877,6 +887,11 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
             })
         }
 
+        // Abort can drop the last SSE token frames; reconcile UI with the text saved to memory
+        if (data.aborted && typeof data.text === 'string') {
+            replaceLastMessage(data.text)
+        }
+
         if (data.chatId) {
             setChatId(data.chatId)
         }
@@ -1143,6 +1158,9 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                         updateErrorMessage(payload.data)
                         break
                     case 'abort':
+                        if (payload.data && typeof payload.data === 'object' && typeof payload.data.text === 'string') {
+                            replaceLastMessage(payload.data.text)
+                        }
                         abortMessage(payload.data)
                         closeResponse()
                         break
@@ -3107,20 +3125,30 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                                             </IconButton>
                                         </InputAdornment>
                                     )}
-                                    {!isAgentCanvas && (
+                                    {!isAgentCanvas && !loading && (
                                         <InputAdornment position='end' sx={{ paddingRight: '15px' }}>
                                             <IconButton type='submit' disabled={getInputDisabled()} edge='end'>
-                                                {loading ? (
+                                                <IconSend
+                                                    color={getInputDisabled() ? '#9e9e9e' : customization.isDarkMode ? 'white' : '#1e88e5'}
+                                                />
+                                            </IconButton>
+                                        </InputAdornment>
+                                    )}
+                                    {!isAgentCanvas && loading && (
+                                        <InputAdornment position='end' sx={{ padding: '15px', mr: 1 }}>
+                                            <IconButton
+                                                edge='end'
+                                                title={isMessageStopping ? 'Stopping...' : 'Stop'}
+                                                style={{ border: !isMessageStopping ? '2px solid red' : 'none' }}
+                                                onClick={() => handleAbort()}
+                                                disabled={isMessageStopping}
+                                            >
+                                                {isMessageStopping ? (
                                                     <div>
-                                                        <CircularProgress color='inherit' size={20} />
+                                                        <CircularProgress color='error' size={20} />
                                                     </div>
                                                 ) : (
-                                                    // Send icon SVG in input field
-                                                    <IconSend
-                                                        color={
-                                                            getInputDisabled() ? '#9e9e9e' : customization.isDarkMode ? 'white' : '#1e88e5'
-                                                        }
-                                                    />
+                                                    <IconSquareFilled size={15} color='red' />
                                                 )}
                                             </IconButton>
                                         </InputAdornment>

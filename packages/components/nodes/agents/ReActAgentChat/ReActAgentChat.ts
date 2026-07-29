@@ -140,7 +140,10 @@ class ReActAgentChat_Agents implements INode {
         const chatHistory = ((await memory.getChatMessages(this.sessionId, false, prependMessages)) as IMessage[]) ?? []
         const chatHistoryString = chatHistory.map((hist) => hist.message).join('\\n')
 
-        const result = await executor.invoke({ input, chat_history: chatHistoryString }, { callbacks })
+        const result = await executor.invoke({ input, chat_history: chatHistoryString }, {
+            callbacks,
+            signal: (options.signal as AbortController | undefined)?.signal
+        })
 
         await memory.addChatMessages(
             [

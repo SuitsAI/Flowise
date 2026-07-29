@@ -18,7 +18,8 @@ import {
     removeSpecificFileFromUpload,
     EvaluationRunner,
     handleEscapeCharacters,
-    IServerSideEventStreamer
+    IServerSideEventStreamer,
+    isAbortError
 } from 'flowise-components'
 import { StatusCodes } from 'http-status-codes'
 import {
@@ -71,6 +72,50 @@ import { OMIT_QUEUE_JOB_DATA } from './constants'
 import { executeAgentFlow } from './buildAgentflow'
 import { Workspace } from '../enterprise/database/entities/workspace.entity'
 import { Organization } from '../enterprise/database/entities/organization.entity'
+
+/**
+ * Wrap SSE streamer so token events are accumulated for abort/partial persistence.
+ * Concurrent-safe: each executeFlow call gets its own proxy + streamState.
+ */
+const createTokenTrackingStreamer = (
+    sseStreamer: IServerSideEventStreamer,
+    streamState: { text: string }
+): IServerSideEventStreamer => {
+    return new Proxy(sseStreamer, {
+        get(target, prop, receiver) {
+            if (prop === 'streamTokenEvent') {
+                return (id: string, data: string) => {
+                    if (typeof data === 'string' && data) {
+                        streamState.text += data
+                    }
+                    return target.streamTokenEvent(id, data)
+                }
+            }
+            const value = Reflect.get(target, prop, receiver)
+            return typeof value === 'function' ? (value as (...args: any[]) => any).bind(target) : value
+        }
+    }) as IServerSideEventStreamer
+}
+
+const persistMemoryOnAbort = async (
+    endingNodeData: INodeData,
+    endingNodeInstance: { sessionId?: string },
+    question: string,
+    partialText: string,
+    sessionId: string
+) => {
+    const memory = endingNodeData?.inputs?.memory as
+        | { addChatMessages?: (messages: Array<{ text: string; type: string }>, overrideSessionId?: string) => Promise<void> }
+        | undefined
+    if (!memory?.addChatMessages) return
+    await memory.addChatMessages(
+        [
+            { text: question, type: 'userMessage' },
+            { text: partialText || '[NO DATA]', type: 'apiMessage' }
+        ],
+        endingNodeInstance?.sessionId || sessionId
+    )
+}
 
 const shouldAutoPlayTTS = (textToSpeechConfig: string | undefined | null): boolean => {
     if (!textToSpeechConfig) return false
@@ -759,6 +804,9 @@ export const executeFlow = async ({
         const finalQuestion = uploadedFilesContent ? `${uploadedFilesContent}\n\n${incomingInput.question}` : incomingInput.question
 
         /*** Prepare run params ***/
+        const streamState = { text: '' }
+        const trackingStreamer =
+            isStreamValid && sseStreamer ? createTokenTrackingStreamer(sseStreamer, streamState) : sseStreamer
         const runParams = {
             orgId,
             workspaceId,
@@ -773,7 +821,9 @@ export const executeFlow = async ({
             analytic: chatflow.analytic,
             uploads,
             prependMessages,
-            ...(isStreamValid && { sseStreamer, shouldStreamResponse: isStreamValid }),
+            signal,
+            streamState,
+            ...(isStreamValid && { sseStreamer: trackingStreamer, shouldStreamResponse: isStreamValid }),
             evaluationRunId,
             updateStorageUsage,
             checkStorage,
@@ -783,9 +833,40 @@ export const executeFlow = async ({
         }
 
         /*** Run the ending node ***/
-        let result = await endingNodeInstance.run(endingNodeData, finalQuestion, runParams)
+        let result: any
+        let wasAborted = false
+        try {
+            result = await endingNodeInstance.run(endingNodeData, finalQuestion, runParams)
+            if (result && typeof result === 'object' && result.aborted) {
+                wasAborted = true
+            }
+        } catch (e) {
+            // AbortController.abort() cancels LangChain OpenAI/Anthropic streams mid-request.
+            // Keep whatever was already streamed, persist memory + chat messages, then finish the flow.
+            if (isAbortError(e, signal?.signal)) {
+                wasAborted = true
+                const partialText = streamState.text || ''
+                try {
+                    await persistMemoryOnAbort(endingNodeData, endingNodeInstance, finalQuestion, partialText, sessionId)
+                } catch (memErr) {
+                    logger.error(`[server]: Failed to persist memory on abort chatId=${chatId}:`, memErr)
+                }
+                result = {
+                    text: partialText,
+                    aborted: true
+                }
+            } else {
+                throw e
+            }
+        }
 
         result = typeof result === 'string' ? { text: result } : result
+        if (wasAborted) {
+            result.aborted = true
+            if (!result.text && streamState.text) {
+                result.text = streamState.text
+            }
+        }
 
         /*** Retrieve threadId from OpenAI Assistant if exists ***/
         if (typeof result === 'object' && result.assistant) {
@@ -807,7 +888,7 @@ export const executeFlow = async ({
         await utilAddChatMessage(userMessage, appDataSource)
 
         let resultText = ''
-        if (result.text) {
+        if (typeof result.text === 'string') {
             resultText = result.text
             /* Check for post-processing settings */
             if (chatflowConfig?.postProcessing?.enabled === true) {
@@ -909,7 +990,7 @@ export const executeFlow = async ({
         if (memoryType) result.memoryType = memoryType
         if (Object.keys(setVariableNodesOutput).length) result.flowVariables = setVariableNodesOutput
 
-        if (shouldAutoPlayTTS(chatflow.textToSpeech) && result.text) {
+        if (!wasAborted && shouldAutoPlayTTS(chatflow.textToSpeech) && result.text) {
             const options = {
                 orgId,
                 chatflowid,
@@ -1095,6 +1176,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
             const signal = new AbortController()
             appServer.abortControllerPool.add(abortControllerId, signal)
             executeData.signal = signal
+            logger.info(`[chatflow] AbortController registered id=${abortControllerId}`)
 
             logger.info(`[chatflow] Executing flow id=${chatflowid} chatId=${chatId}`)
             const result = await executeFlow(executeData)
@@ -1108,6 +1190,17 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
     } catch (e) {
         logger.error(`[server]:${organizationId}/${chatflow.id}/${chatId} Error:`, e)
         appServer.abortControllerPool.remove(`${chatflow.id}_${chatId}`)
+        if (isAbortError(e)) {
+            const sseStreamer = appServer.sseStreamer
+            if (sseStreamer) {
+                sseStreamer.streamAbortEvent(chatId)
+            }
+            return {
+                text: '',
+                chatId,
+                aborted: true
+            }
+        }
         incrementFailedMetricCounter(appServer.metricsProvider, isInternal, isAgentFlow)
         if (e instanceof InternalFlowiseError && e.statusCode === StatusCodes.UNAUTHORIZED) {
             throw e
