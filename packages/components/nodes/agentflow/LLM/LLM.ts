@@ -763,17 +763,21 @@ class LLM_Agentflow implements INode {
         try {
             const zodObj: ICommonObject = {}
             for (const sch of llmStructuredOutput) {
+                // An unnamed key becomes an empty property key, which providers like Anthropic reject
+                const key = typeof sch.key === 'string' ? sch.key.trim() : ''
+                if (!key) continue
+
                 if (sch.type === 'string') {
-                    zodObj[sch.key] = z.string().describe(sch.description || '')
+                    zodObj[key] = z.string().describe(sch.description || '')
                 } else if (sch.type === 'stringArray') {
-                    zodObj[sch.key] = z.array(z.string()).describe(sch.description || '')
+                    zodObj[key] = z.array(z.string()).describe(sch.description || '')
                 } else if (sch.type === 'number') {
-                    zodObj[sch.key] = z.number().describe(sch.description || '')
+                    zodObj[key] = z.number().describe(sch.description || '')
                 } else if (sch.type === 'boolean') {
-                    zodObj[sch.key] = z.boolean().describe(sch.description || '')
+                    zodObj[key] = z.boolean().describe(sch.description || '')
                 } else if (sch.type === 'enum') {
                     const enumValues = sch.enumValues?.split(',').map((item: string) => item.trim()) || []
-                    zodObj[sch.key] = z
+                    zodObj[key] = z
                         .enum(enumValues.length ? (enumValues as [string, ...string[]]) : ['default'])
                         .describe(sch.description || '')
                 } else if (sch.type === 'jsonArray') {
@@ -787,18 +791,21 @@ class LLM_Agentflow implements INode {
                             const itemSchema = this.createZodSchemaFromJSON(schemaObj)
 
                             // Create an array schema of the item schema
-                            zodObj[sch.key] = z.array(itemSchema).describe(sch.description || '')
+                            zodObj[key] = z.array(itemSchema).describe(sch.description || '')
                         } catch (err) {
-                            console.error(`Error parsing JSON schema for ${sch.key}:`, err)
+                            console.error(`Error parsing JSON schema for ${key}:`, err)
                             // Fallback to generic array of records
-                            zodObj[sch.key] = z.array(z.record(z.any())).describe(sch.description || '')
+                            zodObj[key] = z.array(z.record(z.any())).describe(sch.description || '')
                         }
                     } else {
                         // If no schema provided, use generic array of records
-                        zodObj[sch.key] = z.array(z.record(z.any())).describe(sch.description || '')
+                        zodObj[key] = z.array(z.record(z.any())).describe(sch.description || '')
                     }
                 }
             }
+
+            if (!Object.keys(zodObj).length) return llmNodeInstance
+
             const structuredOutput = z.object(zodObj)
 
             // @ts-ignore
