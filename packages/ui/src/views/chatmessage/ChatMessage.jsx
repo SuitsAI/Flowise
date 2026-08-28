@@ -1305,7 +1305,12 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                     obj.artifacts = message.artifacts
                     obj.artifacts.forEach((artifact) => {
                         if (
-                            (artifact.type === 'png' || artifact.type === 'jpeg' || artifact.type === 'file') &&
+                            (artifact.type === 'png' ||
+                                artifact.type === 'jpeg' ||
+                                artifact.type === 'file' ||
+                                artifact.type === 'mp4' ||
+                                artifact.type === 'webm' ||
+                                artifact.type === 'video') &&
                             typeof artifact.data === 'string' &&
                             artifact.data.startsWith('FILE-STORAGE::')
                         ) {
@@ -2247,7 +2252,12 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
             const artifact = newArtifacts[i]
             if (
                 artifact &&
-                (artifact.type === 'png' || artifact.type === 'jpeg' || artifact.type === 'file') &&
+                (artifact.type === 'png' ||
+                    artifact.type === 'jpeg' ||
+                    artifact.type === 'file' ||
+                    artifact.type === 'mp4' ||
+                    artifact.type === 'webm' ||
+                    artifact.type === 'video') &&
                 typeof artifact.data === 'string' &&
                 artifact.data.startsWith('FILE-STORAGE::')
             ) {
@@ -2283,6 +2293,30 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                             width: isAgentReasoning ? '200px' : '100%',
                             height: isAgentReasoning ? '200px' : 'auto',
                             objectFit: 'cover'
+                        }}
+                    />
+                </Card>
+            )
+        } else if (item.type === 'mp4' || item.type === 'webm' || item.type === 'video') {
+            return (
+                <Card
+                    key={index}
+                    sx={{
+                        p: 0,
+                        m: 0,
+                        mt: 2,
+                        mb: 2,
+                        flex: '0 0 auto'
+                    }}
+                >
+                    <CardMedia
+                        component='video'
+                        src={item.data}
+                        controls
+                        sx={{ height: 'auto' }}
+                        style={{
+                            width: isAgentReasoning ? '200px' : '100%',
+                            height: isAgentReasoning ? '200px' : 'auto'
                         }}
                     />
                 </Card>

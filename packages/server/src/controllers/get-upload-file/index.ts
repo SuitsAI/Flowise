@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import fs from 'fs'
+import path from 'path'
 import contentDisposition from 'content-disposition'
 import { streamStorageFile } from 'flowise-components'
 import { StatusCodes } from 'http-status-codes'
@@ -7,6 +8,17 @@ import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import { ChatFlow } from '../../database/entities/ChatFlow'
 import { Workspace } from '../../enterprise/database/entities/workspace.entity'
+
+const mimeFromFileName = (fileName: string): string | undefined => {
+    const ext = path.extname(fileName).toLowerCase()
+    if (ext === '.mp4') return 'video/mp4'
+    if (ext === '.webm') return 'video/webm'
+    if (ext === '.png') return 'image/png'
+    if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
+    if (ext === '.gif') return 'image/gif'
+    if (ext === '.webp') return 'image/webp'
+    return undefined
+}
 
 const streamUploadedFile = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -36,11 +48,16 @@ const streamUploadedFile = async (req: Request, res: Response, next: NextFunctio
         }
         const orgId = workspace.organizationId as string
 
-        // Set Content-Disposition header - force attachment for download
+        const mimeType = mimeFromFileName(fileName)
         if (download) {
             res.setHeader('Content-Disposition', contentDisposition(fileName, { type: 'attachment' }))
+        } else if (mimeType?.startsWith('video/')) {
+            res.setHeader('Content-Disposition', contentDisposition(fileName, { type: 'inline' }))
         } else {
             res.setHeader('Content-Disposition', contentDisposition(fileName))
+        }
+        if (mimeType) {
+            res.setHeader('Content-Type', mimeType)
         }
         const fileStream = await streamStorageFile(chatflowId, chatId, fileName, orgId)
 

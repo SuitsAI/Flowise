@@ -397,7 +397,7 @@ const ViewMessagesDialog = ({ show, dialogProps, onCancel }) => {
             if (chatmsg.artifacts) {
                 msg.artifacts = chatmsg.artifacts
                 msg.artifacts.forEach((artifact) => {
-                    if (artifact.type === 'png' || artifact.type === 'jpeg') {
+                    if (artifact.type === 'png' || artifact.type === 'jpeg' || artifact.type === 'mp4' || artifact.type === 'webm' || artifact.type === 'video') {
                         artifact.data = `${baseURL}/api/v1/get-upload-file?chatflowId=${chatmsg.chatflowid}&chatId=${
                             chatmsg.chatId
                         }&fileName=${artifact.data.replace('FILE-STORAGE::', '')}`
@@ -552,7 +552,7 @@ const ViewMessagesDialog = ({ show, dialogProps, onCancel }) => {
             if (chatmsg.artifacts) {
                 obj.artifacts = chatmsg.artifacts
                 obj.artifacts.forEach((artifact) => {
-                    if (artifact.type === 'png' || artifact.type === 'jpeg') {
+                    if (artifact.type === 'png' || artifact.type === 'jpeg' || artifact.type === 'mp4' || artifact.type === 'webm' || artifact.type === 'video') {
                         artifact.data = `${baseURL}/api/v1/get-upload-file?chatflowId=${chatmsg.chatflowid}&chatId=${
                             chatmsg.chatId
                         }&fileName=${artifact.data.replace('FILE-STORAGE::', '')}`
@@ -829,7 +829,7 @@ const ViewMessagesDialog = ({ show, dialogProps, onCancel }) => {
         const newArtifacts = cloneDeep(artifacts)
         for (let i = 0; i < newArtifacts.length; i++) {
             const artifact = newArtifacts[i]
-            if (artifact && (artifact.type === 'png' || artifact.type === 'jpeg')) {
+            if (artifact && (artifact.type === 'png' || artifact.type === 'jpeg' || artifact.type === 'mp4' || artifact.type === 'webm' || artifact.type === 'video')) {
                 const data = artifact.data
                 newArtifacts[i].data = `${baseURL}/api/v1/get-upload-file?chatflowId=${
                     dialogProps.chatflow.id
@@ -863,6 +863,21 @@ const ViewMessagesDialog = ({ show, dialogProps, onCancel }) => {
                             objectFit: 'cover'
                         }}
                     />
+                </Card>
+            )
+        } else if (item.type === 'mp4' || item.type === 'webm' || item.type === 'video') {
+            return (
+                <Card
+                    key={index}
+                    sx={{
+                        p: 0,
+                        m: 0,
+                        mt: 2,
+                        mb: 2,
+                        flex: '0 0 auto'
+                    }}
+                >
+                    <CardMedia component='video' src={item.data} controls sx={{ height: 'auto' }} style={{ width: '100%' }} />
                 </Card>
             )
         } else if (item.type === 'html') {

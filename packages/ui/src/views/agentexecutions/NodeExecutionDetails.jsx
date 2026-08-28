@@ -754,6 +754,36 @@ export const NodeExecutionDetails = ({ data, label, status, metadata, isPublic, 
                                                             />
                                                         </Card>
                                                     )
+                                                } else if (artifact.type === 'mp4' || artifact.type === 'webm' || artifact.type === 'video') {
+                                                    const videoSrc = artifact.data.startsWith('FILE-STORAGE::')
+                                                        ? `${baseURL}/api/v1/get-upload-file?chatflowId=${
+                                                              metadata?.agentflowId
+                                                          }&chatId=${metadata?.sessionId}&fileName=${artifact.data.replace(
+                                                              'FILE-STORAGE::',
+                                                              ''
+                                                          )}`
+                                                        : artifact.data
+                                                    return (
+                                                        <Card
+                                                            key={`artifact-${artifactIndex}`}
+                                                            sx={{
+                                                                p: 0,
+                                                                m: 0,
+                                                                flex: '0 0 auto',
+                                                                border: 1,
+                                                                borderColor: 'divider',
+                                                                borderRadius: 1,
+                                                                overflow: 'hidden'
+                                                            }}
+                                                        >
+                                                            <CardMedia
+                                                                component='video'
+                                                                src={videoSrc}
+                                                                controls
+                                                                sx={{ height: 'auto', maxHeight: '500px' }}
+                                                            />
+                                                        </Card>
+                                                    )
                                                 } else if (artifact.type === 'html') {
                                                     return (
                                                         <Box
@@ -1010,6 +1040,36 @@ export const NodeExecutionDetails = ({ data, label, status, metadata, isPublic, 
                                                             }
                                                             sx={{ height: 'auto', maxHeight: '500px', objectFit: 'contain' }}
                                                             alt={`artifact-${artifactIndex}`}
+                                                        />
+                                                    </Card>
+                                                )
+                                            } else if (artifact.type === 'mp4' || artifact.type === 'webm' || artifact.type === 'video') {
+                                                const videoSrc = artifact.data.startsWith('FILE-STORAGE::')
+                                                    ? `${baseURL}/api/v1/get-upload-file?chatflowId=${
+                                                          metadata?.agentflowId
+                                                      }&chatId=${metadata?.sessionId}&fileName=${artifact.data.replace(
+                                                          'FILE-STORAGE::',
+                                                          ''
+                                                      )}`
+                                                    : artifact.data
+                                                return (
+                                                    <Card
+                                                        key={`artifact-${artifactIndex}`}
+                                                        sx={{
+                                                            p: 0,
+                                                            m: 0,
+                                                            flex: '0 0 auto',
+                                                            border: 1,
+                                                            borderColor: 'divider',
+                                                            borderRadius: 1,
+                                                            overflow: 'hidden'
+                                                        }}
+                                                    >
+                                                        <CardMedia
+                                                            component='video'
+                                                            src={videoSrc}
+                                                            controls
+                                                            sx={{ height: 'auto', maxHeight: '500px' }}
                                                         />
                                                     </Card>
                                                 )
