@@ -16,11 +16,13 @@ const FollowUpPromptType = z
     })
     .describe('Generate Follow Up Prompts')
 
+export type FollowUpPrompts = z.infer<typeof FollowUpPromptType>
+
 export const generateFollowUpPrompts = async (
     followUpPromptsConfig: FollowUpPromptConfig,
     apiMessageContent: string,
     options: ICommonObject
-) => {
+): Promise<FollowUpPrompts | undefined> => {
     if (followUpPromptsConfig) {
         if (!followUpPromptsConfig.status) return undefined
         const providerConfig = followUpPromptsConfig[followUpPromptsConfig.selectedProvider]
@@ -68,7 +70,7 @@ export const generateFollowUpPrompts = async (
                     history: apiMessageContent,
                     format_instructions: formatInstructions
                 })
-                return structuredResponse
+                return structuredResponse as FollowUpPrompts
             }
             case FollowUpPromptProvider.GOOGLE_GENAI: {
                 const model = new ChatGoogleGenerativeAI({
