@@ -18,9 +18,8 @@ export class MCPToolkit extends BaseToolkit {
         this.transportType = transportType
     }
 
-    // Method to create a new client with transport
-    async createClient(): Promise<Client> {
-        const client = new Client(
+    private newClient(): Client {
+        return new Client(
             {
                 name: 'flowise-client',
                 version: '1.0.0'
@@ -29,10 +28,13 @@ export class MCPToolkit extends BaseToolkit {
                 capabilities: {}
             }
         )
+    }
 
-        let transport: StdioClientTransport | SSEClientTransport | StreamableHTTPClientTransport
-
+    // Method to create a new client with transport
+    async createClient(): Promise<Client> {
         if (this.transportType === 'stdio') {
+            const client = this.newClient()
+
             // Compatible with overridden PATH configuration
             const params = {
                 ...this.serverParams,
@@ -42,70 +44,57 @@ export class MCPToolkit extends BaseToolkit {
                 }
             }
 
-            transport = new StdioClientTransport(params as StdioServerParameters)
+            const transport = new StdioClientTransport(params as StdioServerParameters)
             await client.connect(transport)
-        } else {
-            if (this.serverParams.url === undefined) {
-                throw new Error('URL is required for SSE transport')
-            }
-
-            const baseUrl = new URL(this.serverParams.url)
-            try {
-                if (this.serverParams.headers) {
-                    transport = new StreamableHTTPClientTransport(baseUrl, {
-                        requestInit: {
-                            headers: this.serverParams.headers
-                        }
-                    })
-                } else {
-                    transport = new StreamableHTTPClientTransport(baseUrl)
-                }
-                if (this.serverParams.headers) {
-                    transport = new StreamableHTTPClientTransport(baseUrl, {
-                        requestInit: {
-                            headers: this.serverParams.headers
-                        }
-                    })
-                } else {
-                    transport = new StreamableHTTPClientTransport(baseUrl)
-                }
-                await client.connect(transport)
-            } catch (error) {
-                if (this.serverParams.headers) {
-                    transport = new SSEClientTransport(baseUrl, {
-                        requestInit: {
-                            headers: this.serverParams.headers
-                        },
-                        eventSourceInit: {
-                            fetch: (url, init) => fetch(url, { ...init, headers: this.serverParams.headers })
-                        }
-                    })
-                } else {
-                    transport = new SSEClientTransport(baseUrl)
-                }
-                if (this.serverParams.headers) {
-                    transport = new SSEClientTransport(baseUrl, {
-                        requestInit: {
-                            headers: this.serverParams.headers
-                        },
-                        eventSourceInit: {
-                            fetch: (url, init) => fetch(url, { ...init, headers: this.serverParams.headers })
-                        }
-                    })
-                } else {
-                    transport = new SSEClientTransport(baseUrl)
-                }
-                await client.connect(transport)
-            }
+            return client
         }
 
-        return client
+        if (this.serverParams.url === undefined) {
+            throw new Error('URL is required for SSE transport')
+        }
+
+        const baseUrl = new URL(this.serverParams.url)
+        const headers = this.serverParams.headers
+
+        let streamableError: any
+        try {
+            const client = this.newClient()
+            const transport = headers
+                ? new StreamableHTTPClientTransport(baseUrl, { requestInit: { headers } })
+                : new StreamableHTTPClientTransport(baseUrl)
+            await client.connect(transport)
+            return client
+        } catch (error) {
+            streamableError = error
+        }
+
+        try {
+            const client = this.newClient()
+            const transport = headers
+                ? new SSEClientTransport(baseUrl, {
+                      requestInit: {
+                          headers
+                      },
+                      eventSourceInit: {
+                          fetch: (url, init) => fetch(url, { ...init, headers })
+                      }
+                  })
+                : new SSEClientTransport(baseUrl)
+            await client.connect(transport)
+            return client
+        } catch (sseError) {
+            throw new Error(
+                `Could not connect to MCP server at ${baseUrl.toString()}. Streamable HTTP failed with "${
+                    streamableError?.message ?? streamableError
+                }", SSE failed with "${(sseError as any)?.message ?? sseError}"`
+            )
+        }
     }
 
     async initialize() {
         if (this._tools === null) {
             let client: Client | null = null
-            try{
+            try {
                 client = await this.createClient()
 
                 // Pass timeout options to the request
@@ -113,8 +102,7 @@ export class MCPToolkit extends BaseToolkit {
                 this._tools = await client.request({ method: 'tools/list' }, ListToolsResultSchema, requestOptions)
 
                 this.tools = await this.get_tools()
-            }
-            finally{
+            } finally {
                 // Close the initial client after initialization
                 if (client) {
                     await client.close()
@@ -164,11 +152,11 @@ export async function MCPTool({
             try {
                 client = await toolkit.createClient()
                 const req: CallToolRequest = { method: 'tools/call', params: { name: name, arguments: input as any } }
-                
+
                 // Pass timeout options to the request
                 const requestOptions = toolkit.serverParams.options
                 const res = await client.request(req, CallToolResultSchema, requestOptions)
-                
+
                 const content = res.content
                 const contentString = JSON.stringify(content)
                 return contentString
