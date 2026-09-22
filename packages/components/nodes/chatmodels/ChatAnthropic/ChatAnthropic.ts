@@ -22,7 +22,7 @@ class ChatAnthropic_ChatModels implements INode {
     constructor() {
         this.label = 'ChatAnthropic'
         this.name = 'chatAnthropic'
-        this.version = 9.5
+        this.version = 9.6
         this.type = 'ChatAnthropic'
         this.icon = 'Anthropic.svg'
         this.category = 'Chat Models'
@@ -55,7 +55,7 @@ class ChatAnthropic_ChatModels implements INode {
                 step: 0.1,
                 default: 0.9,
                 description:
-                    'Not supported on Claude Sonnet 5 and Opus 4.7+ (sampling parameters are omitted for those models).',
+                    'Not supported on Claude Sonnet 5, Claude Opus 5.5, Claude Opus 5, and Opus 4.7+ (sampling parameters are omitted for those models).',
                 optional: true
             },
             {
@@ -79,7 +79,7 @@ class ChatAnthropic_ChatModels implements INode {
                 name: 'topP',
                 type: 'number',
                 step: 0.1,
-                description: 'Not supported on Claude Sonnet 5 and Opus 4.7+.',
+                description: 'Not supported on Claude Sonnet 5, Claude Opus 5.5, Claude Opus 5, and Opus 4.7+.',
                 optional: true,
                 additionalParams: true
             },
@@ -88,7 +88,7 @@ class ChatAnthropic_ChatModels implements INode {
                 name: 'topK',
                 type: 'number',
                 step: 0.1,
-                description: 'Not supported on Claude Sonnet 5 and Opus 4.7+.',
+                description: 'Not supported on Claude Sonnet 5, Claude Opus 5.5, Claude Opus 5, and Opus 4.7+.',
                 optional: true,
                 additionalParams: true
             },
@@ -104,7 +104,7 @@ class ChatAnthropic_ChatModels implements INode {
                     { label: 'Max', name: 'max' }
                 ],
                 description:
-                    'Tunes intelligence vs. token spend. Only supported on Claude Sonnet 5, Claude Sonnet 4.6, and Claude Opus 4.5+ (ignored on other models). Defaults to "high" when left unset. Use "xhigh" for the hardest coding/agentic tasks, "low"/"medium" to reduce cost and latency, and "max" for the highest capability with no token-spend constraints. See <a href="https://platform.claude.com/docs/en/build-with-claude/effort" target="_blank">Anthropic docs</a>.',
+                    'Tunes intelligence vs. token spend. Only supported on Claude Sonnet 5, Claude Sonnet 4.6, Claude Opus 5.5, Claude Opus 5, and Claude Opus 4.5+ (ignored on other models). Defaults to "medium" on Opus 5.5 and "high" on other supported models when left unset. Use "xhigh" for the hardest coding/agentic tasks, "low"/"medium" to reduce cost and latency, and "max" for the highest capability with no token-spend constraints. See <a href="https://platform.claude.com/docs/en/build-with-claude/effort" target="_blank">Anthropic docs</a>.',
                 optional: true,
                 additionalParams: true
             },
@@ -113,7 +113,7 @@ class ChatAnthropic_ChatModels implements INode {
                 name: 'extendedThinking',
                 type: 'boolean',
                 description:
-                    'Turn on to stream Claude internal thinking separately from the answer (SSE event name: llmReasoning). On Sonnet 3.7 through Sonnet 4.6, uses manual extended thinking with Budget Tokens. On Claude Sonnet 5 and Opus 4.7+, uses adaptive thinking with summarized display when on, or disables thinking when off.',
+                    'Turn on to stream Claude internal thinking separately from the answer (SSE event name: llmReasoning). On Sonnet 3.7 through Sonnet 4.6, uses manual extended thinking with Budget Tokens. On Claude Sonnet 5, Opus 5, and Opus 4.7–4.8, uses adaptive thinking with summarized display when on, or disables thinking when off. On Claude Opus 5.5, thinking is always on — this toggle only controls whether summarized thinking is streamed.',
                 optional: true,
                 additionalParams: true
             },
@@ -124,7 +124,7 @@ class ChatAnthropic_ChatModels implements INode {
                 step: 1,
                 default: 1024,
                 description:
-                    'Maximum thinking tokens for manual extended thinking (Sonnet 3.7 through Sonnet 4.6). Ignored on Claude Sonnet 5 and Opus 4.7+, which use adaptive thinking instead.',
+                    'Maximum thinking tokens for manual extended thinking (Sonnet 3.7 through Sonnet 4.6). Ignored on Claude Sonnet 5 and Opus 4.7+, which use adaptive thinking instead. Ignored on Claude Opus 5.5, where thinking is always on and controlled with Effort.',
                 optional: true,
                 additionalParams: true
             },
