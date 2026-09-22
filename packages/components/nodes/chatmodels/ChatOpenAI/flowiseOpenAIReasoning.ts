@@ -1,6 +1,6 @@
 /**
  * LangChain's ChatOpenAI delegates requests to inner `responses` and `completions` objects.
- * Each calls its own `_getReasoningParams`, which only allows /^o\\d/ models — so GPT-5 `reasoning`
+ * Each calls its own `_getReasoningParams`, which only allows /^o\\d/ models — so GPT-5/GPT-6 `reasoning`
  * never reaches `responses.create` / chat completions even when Flowise sets `fields.reasoning`.
  * We patch those instances after construction so traces and HTTP payloads match node configuration.
  */
@@ -8,7 +8,8 @@
 export function openAIReasoningParamsApplyToModel(model: string | undefined): boolean {
     if (!model) return false
     if (/^o\d/i.test(model)) return true
-    return /^gpt-5/i.test(model)
+    if (/^gpt-5/i.test(model)) return true
+    return /^gpt-6/i.test(model)
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

@@ -274,7 +274,7 @@ class AzureChatOpenAI_ChatModels implements INode {
                 console.error('Error parsing base options', exception)
             }
         }
-        if (modelName.includes('o1') || modelName.includes('o3') || modelName.includes('gpt-5')) {
+        if (modelName.includes('o1') || modelName.includes('o3') || modelName.includes('gpt-5') || modelName.includes('gpt-6')) {
             delete obj.temperature
             delete obj.stop
             const reasoning: OpenAIClient.Reasoning = {}
