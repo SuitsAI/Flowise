@@ -4,6 +4,20 @@
             "name": "awsChatBedrock",
             "models": [
                 {
+                    "label": "anthropic.claude-opus-5-5",
+                    "name": "anthropic.claude-opus-5-5",
+                    "description": "Claude Opus 5.5",
+                    "input_cost": 0.000004,
+                    "output_cost": 0.00002
+                },
+                {
+                    "label": "anthropic.claude-opus-5",
+                    "name": "anthropic.claude-opus-5",
+                    "description": "Claude Opus 5",
+                    "input_cost": 0.000005,
+                    "output_cost": 0.000025
+                },
+                {
                     "label": "anthropic.claude-sonnet-5",
                     "name": "anthropic.claude-sonnet-5",
                     "description": "Claude Sonnet 5",
@@ -520,6 +534,20 @@
             "name": "chatAnthropic",
             "models": [
                 {
+                    "label": "claude-opus-5-5",
+                    "name": "claude-opus-5-5",
+                    "description": "Claude Opus 5.5",
+                    "input_cost": 0.000004,
+                    "output_cost": 0.00002
+                },
+                {
+                    "label": "claude-opus-5",
+                    "name": "claude-opus-5",
+                    "description": "Claude Opus 5",
+                    "input_cost": 0.000005,
+                    "output_cost": 0.000025
+                },
+                {
                     "label": "claude-sonnet-5",
                     "name": "claude-sonnet-5",
                     "description": "Claude Sonnet 5",
@@ -843,6 +871,20 @@
                     "output_cost": 3.75e-7
                 },
                 {
+                    "label": "claude-opus-5-5",
+                    "name": "claude-opus-5-5",
+                    "description": "Claude Opus 5.5",
+                    "input_cost": 0.000004,
+                    "output_cost": 0.00002
+                },
+                {
+                    "label": "claude-opus-5",
+                    "name": "claude-opus-5",
+                    "description": "Claude Opus 5",
+                    "input_cost": 0.000005,
+                    "output_cost": 0.000025
+                },
+                {
                     "label": "claude-opus-4-8",
                     "name": "claude-opus-4-8",
                     "description": "Claude 4.8 Opus",
@@ -1108,6 +1150,24 @@
         {
             "name": "chatOpenAI",
             "models": [
+                {
+                    "label": "gpt-6-astra",
+                    "name": "gpt-6-astra",
+                    "input_cost": 0.00001,
+                    "output_cost": 0.00005
+                },
+                {
+                    "label": "gpt-6-sol",
+                    "name": "gpt-6-sol",
+                    "input_cost": 0.000002,
+                    "output_cost": 0.00001
+                },
+                {
+                    "label": "gpt-6-luna",
+                    "name": "gpt-6-luna",
+                    "input_cost": 0.0000001,
+                    "output_cost": 0.0000005
+                },
                 {
                     "label": "gpt-5.6-sol",
                     "name": "gpt-5.6-sol",

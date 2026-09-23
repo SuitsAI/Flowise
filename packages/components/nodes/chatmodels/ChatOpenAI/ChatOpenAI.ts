@@ -4,6 +4,7 @@ import { ICommonObject, IMultiModalOption, INode, INodeData, INodeOptionsValue, 
 import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
 import { ChatOpenAI } from './FlowiseChatOpenAI'
 import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
+import { openAIReasoningParamsApplyToModel } from './flowiseOpenAIReasoning'
 import { HttpsProxyAgent } from 'https-proxy-agent'
 import { OpenAI as OpenAIClient } from 'openai'
 
@@ -22,7 +23,7 @@ class ChatOpenAI_ChatModels implements INode {
     constructor() {
         this.label = 'ChatOpenAI'
         this.name = 'chatOpenAI'
-        this.version = 8.3
+        this.version = 8.4
         this.type = 'ChatOpenAI'
         this.icon = 'openai.svg'
         this.category = 'Chat Models'
@@ -190,7 +191,7 @@ class ChatOpenAI_ChatModels implements INode {
             {
                 label: 'Reasoning Effort',
                 description:
-                    'Controls how many reasoning tokens the model generates before responding. Starting with GPT-5.2, "none" is the lowest setting and the default — providing lower latency. Increase to "medium" or "high" for more thorough reasoning. For older models (o1/o3), only low/medium/high are supported.',
+                    'Controls how many reasoning tokens the model generates before responding. GPT-6 Sol/Luna and GPT-5.2+ default to "none" for lower latency; GPT-6 Astra supports low through max (not none). Increase to "medium", "high", "xhigh", or "max" for more thorough reasoning. For older models (o1/o3), only low/medium/high are supported.',
                 name: 'reasoningEffort',
                 type: 'options',
                 options: [
@@ -209,6 +210,14 @@ class ChatOpenAI_ChatModels implements INode {
                     {
                         label: 'High',
                         name: 'high'
+                    },
+                    {
+                        label: 'Xhigh',
+                        name: 'xhigh'
+                    },
+                    {
+                        label: 'Max',
+                        name: 'max'
                     }
                 ],
                 additionalParams: true,
@@ -243,7 +252,7 @@ class ChatOpenAI_ChatModels implements INode {
             {
                 label: 'Verbosity',
                 description:
-                    'Controls how many output tokens are generated. "High" is best for thorough explanations or extensive code refactoring. "Low" is best for concise answers or simple code generation. "Medium" is the default for GPT-5.4+. Only applicable for GPT-5+ models.',
+                    'Controls how many output tokens are generated. "High" is best for thorough explanations or extensive code refactoring. "Low" is best for concise answers or simple code generation. "Medium" is the default for GPT-5.4+. Only applicable for GPT-5+ and GPT-6 models.',
                 name: 'verbosity',
                 type: 'options',
                 options: [
@@ -323,7 +332,7 @@ class ChatOpenAI_ChatModels implements INode {
         }
         if (strictToolCalling) obj.supportsStrictToolCalling = strictToolCalling
 
-        if (modelName.includes('o1') || modelName.includes('o3') || modelName.includes('gpt-5')) {
+        if (openAIReasoningParamsApplyToModel(modelName)) {
             delete obj.temperature
             delete obj.stop
             const reasoning: OpenAIClient.Reasoning = {}
@@ -342,7 +351,7 @@ class ChatOpenAI_ChatModels implements INode {
             }
         }
 
-        if (modelName.includes('gpt-5') && verbosity) {
+        if ((modelName.includes('gpt-5') || modelName.includes('gpt-6')) && verbosity) {
             obj.modelKwargs = {
                 ...obj.modelKwargs,
                 text: { verbosity }

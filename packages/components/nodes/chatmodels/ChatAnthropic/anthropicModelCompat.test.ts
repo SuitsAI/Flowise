@@ -2,6 +2,7 @@ import {
     buildThinkingConfig,
     rejectsSamplingParams,
     requiresAdaptiveThinkingApi,
+    requiresAlwaysOnThinking,
     stripSamplingParams,
     supportsEffort
 } from './anthropicModelCompat'
@@ -10,6 +11,8 @@ describe('anthropicModelCompat', () => {
     describe('rejectsSamplingParams', () => {
         it.each([
             'claude-sonnet-5',
+            'claude-opus-5-5',
+            'claude-opus-5',
             'claude-opus-4-8',
             'claude-opus-4-7',
             'claude-opus-4-7-20251101'
@@ -37,6 +40,22 @@ describe('anthropicModelCompat', () => {
             expect(buildThinkingConfig('claude-sonnet-5', false, '1024')).toEqual({ type: 'disabled' })
         })
 
+        it('uses adaptive/disabled for Opus 5', () => {
+            expect(buildThinkingConfig('claude-opus-5', true, '1024')).toEqual({
+                type: 'adaptive',
+                display: 'summarized'
+            })
+            expect(buildThinkingConfig('claude-opus-5', false, '1024')).toEqual({ type: 'disabled' })
+        })
+
+        it('never disables thinking on Opus 5.5', () => {
+            expect(buildThinkingConfig('claude-opus-5-5', true, '1024')).toEqual({
+                type: 'adaptive',
+                display: 'summarized'
+            })
+            expect(buildThinkingConfig('claude-opus-5-5', false, '1024')).toBeUndefined()
+        })
+
         it('uses manual extended thinking for older Sonnet models when enabled', () => {
             expect(buildThinkingConfig('claude-sonnet-4-6', true, '2048')).toEqual({
                 type: 'enabled',
@@ -56,13 +75,23 @@ describe('anthropicModelCompat', () => {
 
     it('requiresAdaptiveThinkingApi matches rejectsSamplingParams', () => {
         expect(requiresAdaptiveThinkingApi('claude-sonnet-5')).toBe(true)
+        expect(requiresAdaptiveThinkingApi('claude-opus-5-5')).toBe(true)
+        expect(requiresAdaptiveThinkingApi('claude-opus-5')).toBe(true)
         expect(requiresAdaptiveThinkingApi('claude-sonnet-4-6')).toBe(false)
+    })
+
+    it('requiresAlwaysOnThinking is true only for Opus 5.5', () => {
+        expect(requiresAlwaysOnThinking('claude-opus-5-5')).toBe(true)
+        expect(requiresAlwaysOnThinking('claude-opus-5')).toBe(false)
+        expect(requiresAlwaysOnThinking('claude-sonnet-5')).toBe(false)
     })
 
     describe('supportsEffort', () => {
         it.each([
             'claude-sonnet-5',
             'claude-sonnet-4-6',
+            'claude-opus-5-5',
+            'claude-opus-5',
             'claude-opus-4-8',
             'claude-opus-4-7',
             'claude-opus-4-6',
