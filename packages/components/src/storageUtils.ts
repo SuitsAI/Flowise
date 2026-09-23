@@ -73,9 +73,8 @@ export const addBase64FilesToStorage = async (
         await s3Client.send(putObjCmd)
 
         fileNames.push(sanitizedFilename)
-        const totalSize = await getS3StorageSize(orgId)
 
-        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: totalSize / 1024 / 1024 }
+        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: bf.length / 1024 / 1024 }
     } else if (storageType === 'gcs') {
         const { bucket } = getGcsClient()
         const splitDataURI = fileBase64.split(',')
@@ -94,9 +93,8 @@ export const addBase64FilesToStorage = async (
                 .end(bf)
         })
         fileNames.push(sanitizedFilename)
-        const totalSize = await getGCSStorageSize(orgId)
 
-        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: totalSize / 1024 / 1024 }
+        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: bf.length / 1024 / 1024 }
     } else {
         const dir = path.join(getStoragePath(), orgId, chatflowid)
         if (!fs.existsSync(dir)) {
@@ -113,8 +111,7 @@ export const addBase64FilesToStorage = async (
         fs.writeFileSync(filePath, bf)
         fileNames.push(sanitizedFilename)
 
-        const totalSize = await dirSize(path.join(getStoragePath(), orgId))
-        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: totalSize / 1024 / 1024 }
+        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: bf.length / 1024 / 1024 }
     }
 }
 
@@ -146,9 +143,7 @@ export const addArrayFilesToStorage = async (
         await s3Client.send(putObjCmd)
         fileNames.push(sanitizedFilename)
 
-        const totalSize = await getS3StorageSize(paths[0])
-
-        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: totalSize / 1024 / 1024 }
+        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: bf.length / 1024 / 1024 }
     } else if (storageType === 'gcs') {
         const { bucket } = getGcsClient()
         const normalizedPaths = paths.map((p) => p.replace(/\\/g, '/'))
@@ -163,9 +158,7 @@ export const addArrayFilesToStorage = async (
         })
         fileNames.push(sanitizedFilename)
 
-        const totalSize = await getGCSStorageSize(paths[0])
-
-        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: totalSize / 1024 / 1024 }
+        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: bf.length / 1024 / 1024 }
     } else {
         const dir = path.join(getStoragePath(), ...paths.map(_sanitizeFilename))
         if (!fs.existsSync(dir)) {
@@ -175,9 +168,7 @@ export const addArrayFilesToStorage = async (
         fs.writeFileSync(filePath, bf)
         fileNames.push(sanitizedFilename)
 
-        const totalSize = await dirSize(path.join(getStoragePath(), paths[0]))
-
-        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: totalSize / 1024 / 1024 }
+        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: bf.length / 1024 / 1024 }
     }
 }
 
@@ -207,9 +198,7 @@ export const addSingleFileToStorage = async (
         })
         await s3Client.send(putObjCmd)
 
-        const totalSize = await getS3StorageSize(paths[0])
-
-        return { path: 'FILE-STORAGE::' + sanitizedFilename, totalSize: totalSize / 1024 / 1024 }
+        return { path: 'FILE-STORAGE::' + sanitizedFilename, totalSize: bf.length / 1024 / 1024 }
     } else if (storageType === 'gcs') {
         const { bucket } = getGcsClient()
         const normalizedPaths = paths.map((p) => p.replace(/\\/g, '/'))
@@ -223,9 +212,7 @@ export const addSingleFileToStorage = async (
                 .end(bf)
         })
 
-        const totalSize = await getGCSStorageSize(paths[0])
-
-        return { path: 'FILE-STORAGE::' + sanitizedFilename, totalSize: totalSize / 1024 / 1024 }
+        return { path: 'FILE-STORAGE::' + sanitizedFilename, totalSize: bf.length / 1024 / 1024 }
     } else {
         const dir = path.join(getStoragePath(), ...paths.map(_sanitizeFilename))
         if (!fs.existsSync(dir)) {
@@ -234,8 +221,7 @@ export const addSingleFileToStorage = async (
         const filePath = path.join(dir, sanitizedFilename)
         fs.writeFileSync(filePath, bf)
 
-        const totalSize = await dirSize(path.join(getStoragePath(), paths[0]))
-        return { path: 'FILE-STORAGE::' + sanitizedFilename, totalSize: totalSize / 1024 / 1024 }
+        return { path: 'FILE-STORAGE::' + sanitizedFilename, totalSize: bf.length / 1024 / 1024 }
     }
 }
 

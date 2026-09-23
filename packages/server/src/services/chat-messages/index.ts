@@ -10,7 +10,7 @@ import { UsageCacheManager } from '../../UsageCacheManager'
 import { utilAddChatMessage } from '../../utils/addChatMesage'
 import { utilGetChatMessage } from '../../utils/getChatMessage'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
-import { updateStorageUsage } from '../../utils/quotaUsage'
+import { setStorageUsage } from '../../utils/quotaUsage'
 import logger from '../../utils/logger'
 
 // Add chatmessages for chatflowid
@@ -127,7 +127,7 @@ const removeAllChatMessages = async (
         if (chatId) {
             try {
                 const { totalSize } = await removeFilesFromStorage(orgId, chatflowid, chatId)
-                await updateStorageUsage(orgId, workspaceId, totalSize, usageCacheManager)
+                await setStorageUsage(orgId, workspaceId, totalSize, usageCacheManager)
             } catch (e) {
                 // Don't throw error if file deletion fails because file might not exist
             }
@@ -167,7 +167,7 @@ const removeChatMessagesByMessageIds = async (
             // Delete all uploads corresponding to this chatflow/chatId
             try {
                 const { totalSize } = await removeFilesFromStorage(orgId, chatflowid, chatId)
-                await updateStorageUsage(orgId, workspaceId, totalSize, usageCacheManager)
+                await setStorageUsage(orgId, workspaceId, totalSize, usageCacheManager)
             } catch (e) {
                 // Don't throw error if file deletion fails because file might not exist
             }
