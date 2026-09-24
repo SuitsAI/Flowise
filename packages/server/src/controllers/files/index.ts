@@ -1,7 +1,7 @@
 import path from 'path'
 import { NextFunction, Request, Response } from 'express'
 import { getFilesListFromStorage, getStoragePath, removeSpecificFileFromStorage } from 'flowise-components'
-import { updateStorageUsage } from '../../utils/quotaUsage'
+import { setStorageUsage } from '../../utils/quotaUsage'
 import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import { StatusCodes } from 'http-status-codes'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
@@ -46,7 +46,7 @@ const deleteFile = async (req: Request, res: Response, next: NextFunction) => {
         const filePath = req.query.path as string
         const paths = filePath.split(path.sep).filter((path) => path !== '')
         const { totalSize } = await removeSpecificFileFromStorage(activeOrganizationId, ...paths)
-        await updateStorageUsage(activeOrganizationId, activeWorkspaceId, totalSize, getRunningExpressApp().usageCacheManager)
+        await setStorageUsage(activeOrganizationId, activeWorkspaceId, totalSize, getRunningExpressApp().usageCacheManager)
         return res.json({ message: 'file_deleted' })
     } catch (error) {
         next(error)

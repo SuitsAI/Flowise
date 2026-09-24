@@ -51,7 +51,7 @@ import { DOCUMENT_STORE_BASE_FOLDER, INPUT_PARAMS_TYPE, OMIT_QUEUE_JOB_DATA } fr
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import logger from '../../utils/logger'
 import { DOCUMENTSTORE_TOOL_DESCRIPTION_PROMPT_GENERATOR } from '../../utils/prompt'
-import { checkStorage, updateStorageUsage } from '../../utils/quotaUsage'
+import { checkStorage, setStorageUsage, updateStorageUsage } from '../../utils/quotaUsage'
 import { Telemetry } from '../../utils/telemetry'
 import nodesService from '../nodes'
 
@@ -144,7 +144,7 @@ const deleteLoaderFromDocumentStore = async (
                     if (file.name) {
                         try {
                             const { totalSize } = await removeSpecificFileFromStorage(orgId, DOCUMENT_STORE_BASE_FOLDER, storeId, file.name)
-                            await updateStorageUsage(orgId, workspaceId, totalSize, usageCacheManager)
+                            await setStorageUsage(orgId, workspaceId, totalSize, usageCacheManager)
                         } catch (error) {
                             console.error(error)
                         }
@@ -331,7 +331,7 @@ const deleteDocumentStore = async (storeId: string, orgId: string, workspaceId: 
         // now delete the files associated with the store
         try {
             const { totalSize } = await removeFilesFromStorage(orgId, DOCUMENT_STORE_BASE_FOLDER, entity.id)
-            await updateStorageUsage(orgId, workspaceId, totalSize, usageCacheManager)
+            await setStorageUsage(orgId, workspaceId, totalSize, usageCacheManager)
         } catch (error) {
             logger.error(`[server]: Error deleting file storage for documentStore ${storeId}`)
         }
@@ -954,7 +954,7 @@ const _saveChunksToStorage = async (
                                     entity.id,
                                     file.name
                                 )
-                                await updateStorageUsage(orgId, workspaceId, totalSize, usageCacheManager)
+                                await setStorageUsage(orgId, workspaceId, totalSize, usageCacheManager)
                             } catch (error) {
                                 console.error(error)
                             }

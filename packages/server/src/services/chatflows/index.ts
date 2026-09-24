@@ -18,7 +18,7 @@ import { containsBase64File, updateFlowDataWithFilePaths } from '../../utils/fil
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import { utilGetUploadsConfig } from '../../utils/getUploadsConfig'
 import logger from '../../utils/logger'
-import { updateStorageUsage } from '../../utils/quotaUsage'
+import { setStorageUsage } from '../../utils/quotaUsage'
 
 export const enum ChatflowErrorMessage {
     INVALID_CHATFLOW_TYPE = 'Invalid Chatflow Type'
@@ -125,7 +125,7 @@ const deleteChatflow = async (chatflowId: string, orgId: string, workspaceId: st
         try {
             // Delete all uploads corresponding to this chatflow
             const { totalSize } = await removeFolderFromStorage(orgId, chatflowId)
-            await updateStorageUsage(orgId, workspaceId, totalSize, appServer.usageCacheManager)
+            await setStorageUsage(orgId, workspaceId, totalSize, appServer.usageCacheManager)
         } catch (e) {
             logger.error(`[server]: Error deleting file storage for chatflow ${chatflowId}`)
         }
