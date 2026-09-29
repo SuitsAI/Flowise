@@ -11,6 +11,13 @@
                     "output_cost": 0.00002
                 },
                 {
+                    "label": "anthropic.claude-sonnet-5-5",
+                    "name": "anthropic.claude-sonnet-5-5",
+                    "description": "Claude Sonnet 5.5",
+                    "input_cost": 0.000002,
+                    "output_cost": 0.00001
+                },
+                {
                     "label": "anthropic.claude-opus-5",
                     "name": "anthropic.claude-opus-5",
                     "description": "Claude Opus 5",
@@ -541,6 +548,13 @@
                     "output_cost": 0.00002
                 },
                 {
+                    "label": "claude-sonnet-5-5",
+                    "name": "claude-sonnet-5-5",
+                    "description": "Claude Sonnet 5.5",
+                    "input_cost": 0.000002,
+                    "output_cost": 0.00001
+                },
+                {
                     "label": "claude-opus-5",
                     "name": "claude-opus-5",
                     "description": "Claude Opus 5",
@@ -876,6 +890,13 @@
                     "description": "Claude Opus 5.5",
                     "input_cost": 0.000004,
                     "output_cost": 0.00002
+                },
+                {
+                    "label": "claude-sonnet-5-5",
+                    "name": "claude-sonnet-5-5",
+                    "description": "Claude Sonnet 5.5",
+                    "input_cost": 0.000002,
+                    "output_cost": 0.00001
                 },
                 {
                     "label": "claude-opus-5",

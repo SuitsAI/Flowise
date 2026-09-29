@@ -1,6 +1,6 @@
 /**
  * Anthropic API compatibility helpers for models with breaking behavior changes
- * (Claude Sonnet 5, Opus 5.5, Opus 5, Opus 4.7+, etc.).
+ * (Claude Sonnet 5.5, Sonnet 5, Opus 5.5, Opus 5, Opus 4.7+, etc.).
  * @see https://platform.claude.com/docs/en/models/overview
  */
 
@@ -23,6 +23,15 @@ export function requiresAdaptiveThinkingApi(modelName: string): boolean {
 export function requiresAlwaysOnThinking(modelName: string): boolean {
     const normalized = modelName.trim().toLowerCase()
     return normalized === 'claude-opus-5-5' || normalized.startsWith('claude-opus-5-5')
+}
+
+/**
+ * Models that reject `thinking.type: "disabled"` and use `between_tools` to turn off up-front thinking.
+ * @see https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5
+ */
+export function requiresBetweenToolsThinking(modelName: string): boolean {
+    const normalized = modelName.trim().toLowerCase()
+    return normalized === 'claude-sonnet-5-5' || normalized.startsWith('claude-sonnet-5-5')
 }
 
 /** Claude Opus 5 and Opus 5.5 (dateless IDs plus dated/region suffixes). */
@@ -65,9 +74,15 @@ export type AnthropicThinkingConfig =
     | { type: 'enabled'; budget_tokens: number }
     | { type: 'adaptive'; display: 'summarized' }
     | { type: 'disabled' }
+    | { type: 'between_tools' }
 
 /** Build the `thinking` payload for a model + Extended Thinking toggle. */
-export function buildThinkingConfig(modelName: string, extendedThinking: boolean, budgetTokens: string): AnthropicThinkingConfig | undefined {
+export function buildThinkingConfig(
+    modelName: string,
+    extendedThinking: boolean,
+    budgetTokens: string,
+    effort?: string
+): AnthropicThinkingConfig | undefined {
     if (requiresAlwaysOnThinking(modelName)) {
         if (extendedThinking) {
             // Opus 5.5 rejects thinking.type disabled/enabled. Stream summarized text when the toggle is on.
@@ -75,6 +90,16 @@ export function buildThinkingConfig(modelName: string, extendedThinking: boolean
         }
         // Omit the field: the model thinks anyway, and default display is "omitted".
         return undefined
+    }
+    if (requiresBetweenToolsThinking(modelName)) {
+        if (extendedThinking) {
+            return { type: 'adaptive', display: 'summarized' }
+        }
+        // between_tools is rejected at xhigh/max; omit thinking so the API uses adaptive.
+        if (effort === 'xhigh' || effort === 'max') {
+            return undefined
+        }
+        return { type: 'between_tools' }
     }
     if (requiresAdaptiveThinkingApi(modelName)) {
         if (extendedThinking) {
