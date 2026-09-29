@@ -5,7 +5,8 @@ import {
     requiresAlwaysOnThinking,
     requiresBetweenToolsThinking,
     stripSamplingParams,
-    supportsEffort
+    supportsEffort,
+    supportsServerSideFallback
 } from './anthropicModelCompat'
 
 describe('anthropicModelCompat', () => {
@@ -31,6 +32,26 @@ describe('anthropicModelCompat', () => {
         ])('returns false for %s', (model) => {
             expect(rejectsSamplingParams(model)).toBe(false)
         })
+    })
+
+    describe('supportsServerSideFallback', () => {
+        it.each([
+            'claude-fable-5',
+            'claude-fable-5-1',
+            'claude-opus-5',
+            'claude-opus-5-5',
+            'claude-opus-5-5-20250929',
+            'claude-sonnet-5-5'
+        ])('returns true for %s', (model) => {
+            expect(supportsServerSideFallback(model)).toBe(true)
+        })
+
+        it.each(['claude-sonnet-5', 'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-3-haiku'])(
+            'returns false for %s',
+            (model) => {
+                expect(supportsServerSideFallback(model)).toBe(false)
+            }
+        )
     })
 
     describe('buildThinkingConfig', () => {
