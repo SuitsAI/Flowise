@@ -3,6 +3,7 @@ import {
     rejectsSamplingParams,
     requiresAdaptiveThinkingApi,
     requiresAlwaysOnThinking,
+    requiresBetweenToolsThinking,
     stripSamplingParams,
     supportsEffort
 } from './anthropicModelCompat'
@@ -10,6 +11,7 @@ import {
 describe('anthropicModelCompat', () => {
     describe('rejectsSamplingParams', () => {
         it.each([
+            'claude-sonnet-5-5',
             'claude-sonnet-5',
             'claude-opus-5-5',
             'claude-opus-5',
@@ -38,6 +40,20 @@ describe('anthropicModelCompat', () => {
                 display: 'summarized'
             })
             expect(buildThinkingConfig('claude-sonnet-5', false, '1024')).toEqual({ type: 'disabled' })
+        })
+
+        it('uses adaptive/between_tools for Sonnet 5.5', () => {
+            expect(buildThinkingConfig('claude-sonnet-5-5', true, '1024')).toEqual({
+                type: 'adaptive',
+                display: 'summarized'
+            })
+            expect(buildThinkingConfig('claude-sonnet-5-5', false, '1024')).toEqual({ type: 'between_tools' })
+        })
+
+        it('omits between_tools on Sonnet 5.5 at xhigh/max effort', () => {
+            expect(buildThinkingConfig('claude-sonnet-5-5', false, '1024', 'xhigh')).toBeUndefined()
+            expect(buildThinkingConfig('claude-sonnet-5-5', false, '1024', 'max')).toBeUndefined()
+            expect(buildThinkingConfig('claude-sonnet-5-5', false, '1024', 'high')).toEqual({ type: 'between_tools' })
         })
 
         it('uses adaptive/disabled for Opus 5', () => {
@@ -74,6 +90,7 @@ describe('anthropicModelCompat', () => {
     })
 
     it('requiresAdaptiveThinkingApi matches rejectsSamplingParams', () => {
+        expect(requiresAdaptiveThinkingApi('claude-sonnet-5-5')).toBe(true)
         expect(requiresAdaptiveThinkingApi('claude-sonnet-5')).toBe(true)
         expect(requiresAdaptiveThinkingApi('claude-opus-5-5')).toBe(true)
         expect(requiresAdaptiveThinkingApi('claude-opus-5')).toBe(true)
@@ -83,11 +100,19 @@ describe('anthropicModelCompat', () => {
     it('requiresAlwaysOnThinking is true only for Opus 5.5', () => {
         expect(requiresAlwaysOnThinking('claude-opus-5-5')).toBe(true)
         expect(requiresAlwaysOnThinking('claude-opus-5')).toBe(false)
+        expect(requiresAlwaysOnThinking('claude-sonnet-5-5')).toBe(false)
         expect(requiresAlwaysOnThinking('claude-sonnet-5')).toBe(false)
+    })
+
+    it('requiresBetweenToolsThinking is true only for Sonnet 5.5', () => {
+        expect(requiresBetweenToolsThinking('claude-sonnet-5-5')).toBe(true)
+        expect(requiresBetweenToolsThinking('claude-sonnet-5')).toBe(false)
+        expect(requiresBetweenToolsThinking('claude-opus-5-5')).toBe(false)
     })
 
     describe('supportsEffort', () => {
         it.each([
+            'claude-sonnet-5-5',
             'claude-sonnet-5',
             'claude-sonnet-4-6',
             'claude-opus-5-5',
