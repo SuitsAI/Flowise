@@ -4,7 +4,14 @@ import { BaseLLMParams } from '@langchain/core/language_models/llms'
 import { ICommonObject, IMultiModalOption, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
 import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
 import { ChatAnthropic as FlowiseChatAnthropic } from './FlowiseChatAnthropic'
-import { buildThinkingConfig, rejectsSamplingParams, supportsEffort } from './anthropicModelCompat'
+import {
+    DEFAULT_REFUSAL_FALLBACK_MODEL,
+    SERVER_SIDE_FALLBACK_BETA,
+    buildThinkingConfig,
+    rejectsSamplingParams,
+    supportsEffort,
+    supportsServerSideFallback
+} from './anthropicModelCompat'
 import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
 
 class ChatAnthropic_ChatModels implements INode {
@@ -22,7 +29,7 @@ class ChatAnthropic_ChatModels implements INode {
     constructor() {
         this.label = 'ChatAnthropic'
         this.name = 'chatAnthropic'
-        this.version = 9.7
+        this.version = 10
         this.type = 'ChatAnthropic'
         this.icon = 'Anthropic.svg'
         this.category = 'Chat Models'
@@ -161,6 +168,29 @@ class ChatAnthropic_ChatModels implements INode {
                 optional: true
             },
             {
+                label: 'Server-side Fallback',
+                name: 'serverSideFallback',
+                type: 'boolean',
+                default: true,
+                description:
+                    'On a classifier refusal, ask the Claude API to retry the same request on the Fallback Model (<code>fallbacks: [{ model }]</code> and beta <code>server-side-fallback-2026-07-01</code>). Applies only to Claude Fable 5, Fable 5.1, Opus 5, Opus 5.5, and Sonnet 5.5. See <a href="https://platform.claude.com/docs/en/build-with-claude/refusals-and-fallback#server-side-fallback" target="_blank">Anthropic docs</a>.',
+                optional: true,
+                additionalParams: true
+            },
+            {
+                label: 'Fallback Model',
+                name: 'fallbackModel',
+                type: 'asyncOptions',
+                loadMethod: 'listModels',
+                default: DEFAULT_REFUSAL_FALLBACK_MODEL,
+                description: 'Model the Claude API runs when the requested model declines. Sent as <code>fallbacks: [{ model }]</code>.',
+                optional: true,
+                additionalParams: true,
+                show: {
+                    serverSideFallback: true
+                }
+            },
+            {
                 label: 'Beta',
                 name: 'beta',
                 type: 'string',
@@ -191,6 +221,8 @@ class ChatAnthropic_ChatModels implements INode {
         const extendedThinking = nodeData.inputs?.extendedThinking as boolean
         const budgetTokens = nodeData.inputs?.budgetTokens as string
         const beta = nodeData.inputs?.beta as string
+        const serverSideFallback = nodeData.inputs?.serverSideFallback as boolean | undefined
+        const fallbackModelInput = (nodeData.inputs?.fallbackModel as string | undefined)?.trim()
         const promptCaching = nodeData.inputs?.promptCaching as boolean
         const cacheConversationHistory = nodeData.inputs?.cacheConversationHistory as boolean
 
@@ -234,6 +266,16 @@ class ChatAnthropic_ChatModels implements INode {
             }
         }
 
+        // Default on for saved flows that predate this input. Only models with the refusal
+        // classifier accept the parameter; others would be rejected with a 400.
+        const fallbackModel =
+            fallbackModelInput === '' ? '' : fallbackModelInput || DEFAULT_REFUSAL_FALLBACK_MODEL
+        const enableServerSideFallback =
+            serverSideFallback !== false && supportsServerSideFallback(modelName) && !!fallbackModel && fallbackModel !== modelName
+        if (enableServerSideFallback) {
+            obj.invocationKwargs = { ...obj.invocationKwargs, fallbacks: [{ model: fallbackModel }] }
+        }
+
         // Collect anthropic-beta header values (comma-separated), de-duplicated
         const betaValues = new Set<string>(
             (beta ?? '')
@@ -241,6 +283,9 @@ class ChatAnthropic_ChatModels implements INode {
                 .map((value) => value.trim())
                 .filter((value) => value.length > 0)
         )
+        if (enableServerSideFallback) {
+            betaValues.add(SERVER_SIDE_FALLBACK_BETA)
+        }
 
         if (betaValues.size > 0) {
             obj.clientOptions = {
