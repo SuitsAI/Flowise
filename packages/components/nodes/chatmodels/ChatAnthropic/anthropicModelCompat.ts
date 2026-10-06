@@ -34,6 +34,29 @@ export function requiresBetweenToolsThinking(modelName: string): boolean {
     return normalized === 'claude-sonnet-5-5' || normalized.startsWith('claude-sonnet-5-5')
 }
 
+/**
+ * Models whose safety classifiers return `stop_reason: "refusal"` and accept
+ * server-side fallback (`fallbacks: [{ model }]` + beta `server-side-fallback-2026-07-01`).
+ * Claude Fable 5, Fable 5.1, Opus 5, Opus 5.5, and Sonnet 5.5.
+ * @see https://platform.claude.com/docs/en/build-with-claude/refusals-and-fallback#server-side-fallback
+ */
+export const SERVER_SIDE_FALLBACK_BETA = 'server-side-fallback-2026-07-01'
+
+/** Default model named in the server-side `fallbacks` list. */
+export const DEFAULT_REFUSAL_FALLBACK_MODEL = 'claude-opus-4-8'
+
+export function supportsServerSideFallback(modelName: string): boolean {
+    const normalized = modelName.trim().toLowerCase()
+    if (normalized === 'claude-fable-5' || normalized.startsWith('claude-fable-5-') || normalized.startsWith('claude-fable-5@')) {
+        return true
+    }
+    if (isClaudeOpus5Line(normalized)) return true
+    if (normalized === 'claude-sonnet-5-5' || normalized.startsWith('claude-sonnet-5-5-') || normalized.startsWith('claude-sonnet-5-5@')) {
+        return true
+    }
+    return false
+}
+
 /** Claude Opus 5 and Opus 5.5 (dateless IDs plus dated/region suffixes). */
 function isClaudeOpus5Line(normalized: string): boolean {
     return (

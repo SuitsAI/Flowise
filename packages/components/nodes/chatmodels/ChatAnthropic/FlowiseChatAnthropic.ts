@@ -4,7 +4,7 @@ import { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager'
 import { type BaseMessage, type MessageContentComplex } from '@langchain/core/messages'
 import { type ChatResult, type ChatGenerationChunk } from '@langchain/core/outputs'
 import { IVisionChatModal, IMultiModalOption } from '../../../src'
-import { rejectsSamplingParams, stripSamplingParams } from './anthropicModelCompat'
+import { rejectsSamplingParams, stripSamplingParams, supportsServerSideFallback } from './anthropicModelCompat'
 
 const DEFAULT_IMAGE_MODEL = 'claude-3-5-haiku-latest'
 const DEFAULT_IMAGE_MAX_TOKEN = 2048
@@ -90,6 +90,11 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
             thinking.display = 'summarized'
         }
 
+        // `fallbacks` is only valid on models with the refusal classifier.
+        if (!supportsServerSideFallback(modelName)) {
+            delete params['fallbacks']
+        }
+
         if (this.promptCaching) {
             // Explicit breakpoint on the tool definitions: tools sit at the front of the prefix
             // (tools -> system -> messages), so a breakpoint on the last tool caches the (usually
@@ -131,14 +136,13 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
         options: this['ParsedCallOptions'],
         runManager?: CallbackManagerForLLMRun
     ): Promise<ChatResult> {
-        if (!this.promptCaching) {
-            return super._generate(messages, options, runManager)
+        const messagesToSend = this.promptCaching ? this._injectCacheControl(messages) : messages
+        const result = await super._generate(messagesToSend, options, runManager)
+        this._stripFallbackBlocks(result)
+        if (this.promptCaching) {
+            this._logCacheDebug(messagesToSend, result)
+            this._enrichUsageWithCacheBreakdown(result)
         }
-
-        const modifiedMessages = this._injectCacheControl(messages)
-        const result = await super._generate(modifiedMessages, options, runManager)
-        this._logCacheDebug(modifiedMessages, result)
-        this._enrichUsageWithCacheBreakdown(result)
         return result
     }
 
@@ -157,6 +161,36 @@ export class ChatAnthropic extends LangchainChatAnthropic implements IVisionChat
         }
         const modifiedMessages = this._injectCacheControl(messages)
         yield* super._streamResponseChunks(modifiedMessages, options, runManager)
+    }
+
+    /**
+     * A server-side fallback inserts a `fallback` content block before the answer.
+     * LangChain leaves that block in the message and, when it is not the only block,
+     * sets the generation text to "". Drop the marker so the agent sees the text
+     * (and any tool calls) from the model that actually answered.
+     */
+    private _stripFallbackBlocks(result: ChatResult): void {
+        for (const generation of result.generations ?? []) {
+            const message = generation.message as { content?: unknown } | undefined
+            if (!message || !Array.isArray(message.content)) continue
+            const content = message.content.filter((block) => {
+                if (typeof block !== 'object' || block === null) return true
+                return (block as { type?: string }).type !== 'fallback'
+            })
+            if (content.length === message.content.length) continue
+            const onlyText =
+                content.length > 0 &&
+                content.every(
+                    (block) => typeof block === 'object' && block !== null && (block as { type?: string }).type === 'text'
+                )
+            if (onlyText) {
+                const text = content.map((block) => (block as { text?: string }).text ?? '').join('')
+                message.content = text
+                generation.text = text
+            } else {
+                message.content = content
+            }
+        }
     }
 
     /** Logs cache-related state when prompt caching is enabled (visible in Flowise server logs). */

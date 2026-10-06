@@ -1,7 +1,26 @@
 import { Tool, tool } from '@langchain/core/tools'
 import { z } from 'zod'
+import hash from 'object-hash'
 import { ICommonObject, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../../src/Interface'
 import { MCPToolkit } from '../core'
+
+// One toolkit per resolved server config, shared by every chat that uses it.
+// Idle connections are closed by MCPToolkit; this cap only bounds memory if
+// mcpConfigValues change on every run (each value is its own process).
+const MAX_CACHED_MCP_TOOLKITS = 64
+const mcpToolkitCache = new Map<string, { tools: Tool[]; toolkit: MCPToolkit }>()
+const mcpToolkitInflight = new Map<string, Promise<Tool[]>>()
+
+function rememberMCPToolkit(cacheKey: string, entry: { tools: Tool[]; toolkit: MCPToolkit }) {
+    mcpToolkitCache.delete(cacheKey)
+    mcpToolkitCache.set(cacheKey, entry)
+    for (const [key, cached] of mcpToolkitCache) {
+        if (mcpToolkitCache.size <= MAX_CACHED_MCP_TOOLKITS) break
+        if (key === cacheKey || cached.toolkit.busy) continue
+        mcpToolkitCache.delete(key)
+        void cached.toolkit.close()
+    }
+}
 
 const RESPONSE_BATCH_SIZE = 50_000
 
@@ -54,9 +73,9 @@ class DynamicCustom_MCP implements INode {
 
     //@ts-ignore
     loadMethods = {
-        listActions: async (nodeData: INodeData): Promise<INodeOptionsValue[]> => {
+        listActions: async (nodeData: INodeData, options: ICommonObject): Promise<INodeOptionsValue[]> => {
             try {
-                const toolset = await this.getTools(nodeData)
+                const toolset = await this.getTools(nodeData, options)
                 toolset.sort((a: any, b: any) => a.name.localeCompare(b.name))
 
                 return toolset.map(({ name, ...rest }) => ({
@@ -76,13 +95,12 @@ class DynamicCustom_MCP implements INode {
         }
     }
 
-    async init(nodeData: INodeData): Promise<any> {
-        const tools = await this.getTools(nodeData)
+    async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
+        const tools = await this.getTools(nodeData, options)
         return tools
     }
 
-    async getTools(nodeData: INodeData): Promise<Tool[]> {
-
+    async getTools(nodeData: INodeData, _options?: ICommonObject): Promise<Tool[]> {
         const mcpConfigValuesStr = nodeData.inputs?.mcpConfigValues
         let mcpConfigValues: ICommonObject = {}
         if (mcpConfigValuesStr) {
@@ -110,29 +128,52 @@ class DynamicCustom_MCP implements INode {
                 serverParams = JSON.parse(serverParamsString)
             }
 
-            let tmpServerParams = JSON.stringify(serverParams);
+            let tmpServerParams = JSON.stringify(serverParams)
             for (const key in mcpConfigValues) {
                 tmpServerParams = tmpServerParams.replace(new RegExp(`{${key}}`, 'g'), mcpConfigValues[key])
             }
             serverParams = JSON.parse(tmpServerParams)
 
+            const cacheKey = hash(serverParams)
 
-            // Compatible with stdio and SSE
-            let toolkit: MCPToolkit
-            if (serverParams?.command === undefined) {
-                toolkit = new MCPToolkit(serverParams, 'sse')
-            } else {
-                toolkit = new MCPToolkit(serverParams, 'stdio')
+            const cached = mcpToolkitCache.get(cacheKey)
+            if (cached?.tools.length) {
+                rememberMCPToolkit(cacheKey, cached)
+                return cached.tools
             }
 
-            await toolkit.initialize()
+            const pending = mcpToolkitInflight.get(cacheKey)
+            if (pending) {
+                return pending
+            }
 
-            const tools = toolkit.tools ?? []
-
-            return tools.map((t) => wrapToolWithResponseBatching(t as Tool))
+            const loading = this.connectToolkit(serverParams, cacheKey)
+            mcpToolkitInflight.set(cacheKey, loading)
+            try {
+                return await loading
+            } finally {
+                mcpToolkitInflight.delete(cacheKey)
+            }
         } catch (error) {
+            console.error('DynamicCustomMCP failed to load tools:', error)
             return []
-            //throw new Error(`Invalid MCP Server Config: ${error}`)
+        }
+    }
+
+    private async connectToolkit(serverParams: any, cacheKey: string): Promise<Tool[]> {
+        const toolkit = new MCPToolkit(serverParams, serverParams?.command === undefined ? 'sse' : 'stdio')
+        try {
+            await toolkit.initialize()
+            const tools = (toolkit.tools ?? []).map((t) => wrapToolWithResponseBatching(t as Tool))
+            if (!tools.length) {
+                await toolkit.close()
+                return []
+            }
+            rememberMCPToolkit(cacheKey, { tools, toolkit })
+            return tools
+        } catch (error) {
+            await toolkit.close()
+            throw error
         }
     }
 }
