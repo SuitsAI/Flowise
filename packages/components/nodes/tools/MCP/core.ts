@@ -5,6 +5,7 @@ import { BaseToolkit, tool, Tool } from '@langchain/core/tools'
 import { z } from 'zod'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
+import { callMcpRunner } from './mcpBridge'
 
 const MCP_IDLE_CLOSE_MS = 120_000
 // A dead Streamable HTTP endpoint otherwise sits until the SDK's 60s request timeout
@@ -251,6 +252,17 @@ export class MCPToolkit extends BaseToolkit {
     }
 
     async callTool(name: string, args: Record<string, unknown>): Promise<string> {
+        // The runner process does the actual I/O. Doing it here stalls every other request for the whole tool call.
+        if (process.env.FLOWISE_MCP_RUNNER !== '1') {
+            return callMcpRunner({
+                type: 'call',
+                serverParams: this.serverParams,
+                transportType: this.transportType,
+                name,
+                args
+            })
+        }
+
         const req: CallToolRequest = { method: 'tools/call', params: { name, arguments: args } }
         const requestOptions = this.serverParams.options
 
@@ -283,6 +295,26 @@ export class MCPToolkit extends BaseToolkit {
     }
 
     async initialize() {
+        if (process.env.FLOWISE_MCP_RUNNER !== '1') {
+            if (this._tools !== null) return
+            if (!this.initPromise) {
+                this.initPromise = callMcpRunner({
+                    type: 'list',
+                    serverParams: this.serverParams,
+                    transportType: this.transportType
+                })
+                    .then(async (toolsResult) => {
+                        this._tools = toolsResult
+                        this.tools = await this.get_tools()
+                    })
+                    .catch(async (error) => {
+                        this.initPromise = null
+                        throw error
+                    })
+            }
+            return this.initPromise
+        }
+
         if (this._tools !== null) return
         if (!this.initPromise) {
             const load = async (client: Client) => {
