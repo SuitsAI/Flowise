@@ -114,6 +114,50 @@ const ToolDialog = ({ show, dialogProps, onUseTemplate, onCancel, onConfirm, set
         })
     }
 
+    // Providers such as Anthropic reject property names outside this pattern
+    const propertyNameRegex = /^[a-zA-Z0-9_.-]{1,64}$/
+
+    // Drops rows that were never filled in, and rejects the ones that are half filled
+    const validateSchema = () => {
+        const rows = toolSchema
+            .map((row) => ({ ...row, property: String(row.property ?? '').trim() }))
+            .filter((row) => row.property || row.type || row.description || row.required)
+
+        const usedProperties = new Set()
+        for (let i = 0; i < rows.length; i += 1) {
+            const { property, type } = rows[i]
+            const rowLabel = `Input Schema row ${i + 1}`
+
+            if (!property) return { error: `${rowLabel} is missing a property name` }
+            if (!propertyNameRegex.test(property)) {
+                return {
+                    error: `${rowLabel}: property "${property}" can only contain letters, numbers, underscore, dot or dash, up to 64 characters`
+                }
+            }
+            if (!type) return { error: `${rowLabel}: property "${property}" is missing a type` }
+            if (usedProperties.has(property)) return { error: `${rowLabel}: property "${property}" is duplicated` }
+            usedProperties.add(property)
+        }
+
+        return { rows }
+    }
+
+    const showError = (message) => {
+        enqueueSnackbar({
+            message,
+            options: {
+                key: new Date().getTime() + Math.random(),
+                variant: 'error',
+                persist: true,
+                action: (key) => (
+                    <Button style={{ color: 'white' }} onClick={() => closeSnackbar(key)}>
+                        <IconX />
+                    </Button>
+                )
+            }
+        })
+    }
+
     const onSaveAsTemplate = () => {
         setExportAsTemplateDialogProps({
             title: 'Export As Template',
@@ -277,12 +321,17 @@ const ToolDialog = ({ show, dialogProps, onUseTemplate, onCancel, onConfirm, set
     }
 
     const addNewTool = async () => {
+        const { rows, error: schemaError } = validateSchema()
+        if (schemaError) {
+            showError(schemaError)
+            return
+        }
         try {
             const obj = {
                 name: toolName,
                 description: toolDesc,
                 color: generateRandomGradient(),
-                schema: JSON.stringify(toolSchema),
+                schema: JSON.stringify(rows),
                 func: toolFunc,
                 iconSrc: toolIcon
             }
@@ -323,11 +372,16 @@ const ToolDialog = ({ show, dialogProps, onUseTemplate, onCancel, onConfirm, set
     }
 
     const saveTool = async () => {
+        const { rows, error: schemaError } = validateSchema()
+        if (schemaError) {
+            showError(schemaError)
+            return
+        }
         try {
             const saveResp = await toolsApi.updateTool(toolId, {
                 name: toolName,
                 description: toolDesc,
-                schema: JSON.stringify(toolSchema),
+                schema: JSON.stringify(rows),
                 func: toolFunc,
                 iconSrc: toolIcon
             })

@@ -189,16 +189,20 @@ export const convertStructuredSchemaToZod = (schema: string | object): ICommonOb
         const parsedSchema = typeof schema === 'string' ? JSON.parse(schema) : schema
         const zodObj: ICommonObject = {}
         for (const sch of parsedSchema) {
+            // An unnamed key becomes an empty property key, which providers like Anthropic reject
+            const key = typeof sch.key === 'string' ? sch.key.trim() : ''
+            if (!key) continue
+
             if (sch.type === 'String') {
-                zodObj[sch.key] = z.string().describe(sch.description)
+                zodObj[key] = z.string().describe(sch.description)
             } else if (sch.type === 'String Array') {
-                zodObj[sch.key] = z.array(z.string()).describe(sch.description)
+                zodObj[key] = z.array(z.string()).describe(sch.description)
             } else if (sch.type === 'Number') {
-                zodObj[sch.key] = z.number().describe(sch.description)
+                zodObj[key] = z.number().describe(sch.description)
             } else if (sch.type === 'Boolean') {
-                zodObj[sch.key] = z.boolean().describe(sch.description)
+                zodObj[key] = z.boolean().describe(sch.description)
             } else if (sch.type === 'Enum') {
-                zodObj[sch.key] = z.enum(sch.enumValues.split(',').map((item: string) => item.trim())).describe(sch.description)
+                zodObj[key] = z.enum(sch.enumValues.split(',').map((item: string) => item.trim())).describe(sch.description)
             }
         }
         return zodObj

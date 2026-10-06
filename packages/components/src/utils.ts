@@ -905,29 +905,33 @@ export const convertSchemaToZod = (schema: string | object): ICommonObject => {
         const parsedSchema = typeof schema === 'string' ? JSON.parse(schema) : schema
         const zodObj: ICommonObject = {}
         for (const sch of parsedSchema) {
+            // An unnamed row becomes an empty property key, which providers like Anthropic reject
+            const property = typeof sch.property === 'string' ? sch.property.trim() : ''
+            if (!property) continue
+
             if (sch.type === 'string') {
                 if (sch.required) {
-                    zodObj[sch.property] = z.string({ required_error: `${sch.property} required` }).describe(sch.description)
+                    zodObj[property] = z.string({ required_error: `${property} required` }).describe(sch.description)
                 } else {
-                    zodObj[sch.property] = z.string().describe(sch.description).optional()
+                    zodObj[property] = z.string().describe(sch.description).optional()
                 }
             } else if (sch.type === 'number') {
                 if (sch.required) {
-                    zodObj[sch.property] = z.number({ required_error: `${sch.property} required` }).describe(sch.description)
+                    zodObj[property] = z.number({ required_error: `${property} required` }).describe(sch.description)
                 } else {
-                    zodObj[sch.property] = z.number().describe(sch.description).optional()
+                    zodObj[property] = z.number().describe(sch.description).optional()
                 }
             } else if (sch.type === 'boolean') {
                 if (sch.required) {
-                    zodObj[sch.property] = z.boolean({ required_error: `${sch.property} required` }).describe(sch.description)
+                    zodObj[property] = z.boolean({ required_error: `${property} required` }).describe(sch.description)
                 } else {
-                    zodObj[sch.property] = z.boolean().describe(sch.description).optional()
+                    zodObj[property] = z.boolean().describe(sch.description).optional()
                 }
             } else if (sch.type === 'date') {
                 if (sch.required) {
-                    zodObj[sch.property] = z.date({ required_error: `${sch.property} required` }).describe(sch.description)
+                    zodObj[property] = z.date({ required_error: `${property} required` }).describe(sch.description)
                 } else {
-                    zodObj[sch.property] = z.date().describe(sch.description).optional()
+                    zodObj[property] = z.date().describe(sch.description).optional()
                 }
             }
         }
