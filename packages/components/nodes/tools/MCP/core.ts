@@ -7,6 +7,9 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 
 const MCP_IDLE_CLOSE_MS = 120_000
+// A dead Streamable HTTP endpoint otherwise sits until the SDK's 60s request timeout
+// and every other request waiting on this toolkit waits with it.
+const MCP_TRANSPORT_PROBE_TIMEOUT_MS = 8_000
 
 export class MCPToolkit extends BaseToolkit {
     tools: Tool[] = []
@@ -20,6 +23,8 @@ export class MCPToolkit extends BaseToolkit {
     private idleTimer: ReturnType<typeof setTimeout> | null = null
     private inflight = 0
     private initPromise: Promise<void> | null = null
+    private requestQueue: Promise<void> = Promise.resolve()
+    private preferredRemoteTransport: 'streamable' | 'sse' | null = null
 
     constructor(serverParams: StdioServerParameters | any, transportType: 'stdio' | 'sse') {
         super()
@@ -44,13 +49,12 @@ export class MCPToolkit extends BaseToolkit {
         if (this.transportType === 'stdio') {
             const client = this.newClient()
 
-            // Compatible with overridden PATH configuration
-            // Default stderr is "inherit". When the parent stderr pipe fills, the child
-            // blocks on write and the tool call sits there until the SDK timeout.
-            const stderr = this.serverParams.stderr ?? 'pipe'
+            // "inherit" and an undrained "pipe" both stall the child once the stderr
+            // buffer fills. The tool call then waits until timeout, and a blocked
+            // stderr write stalls this process too.
             const params = {
                 ...this.serverParams,
-                stderr,
+                stderr: this.serverParams.stderr ?? 'ignore',
                 env: {
                     ...(this.serverParams.env || {}),
                     PATH: process.env.PATH
@@ -58,10 +62,6 @@ export class MCPToolkit extends BaseToolkit {
             }
 
             const transport = new StdioClientTransport(params as StdioServerParameters)
-            if (stderr === 'pipe') {
-                // Drain stderr so a full pipe cannot block the child process.
-                transport.stderr?.on('data', () => undefined)
-            }
             try {
                 await client.connect(transport)
                 return client
@@ -78,23 +78,54 @@ export class MCPToolkit extends BaseToolkit {
         const baseUrl = new URL(this.serverParams.url)
         const headers = this.serverParams.headers
 
-        let streamableError: any
-        let streamableClient: Client | null = null
+        if (this.preferredRemoteTransport === 'sse') {
+            return this.connectSse(baseUrl, headers)
+        }
+        if (this.preferredRemoteTransport === 'streamable') {
+            return this.connectStreamable(baseUrl, headers)
+        }
+
+        const configuredTimeout = Number(this.serverParams.options?.timeout)
+        const probeTimeout =
+            Number.isFinite(configuredTimeout) && configuredTimeout > 0
+                ? Math.min(configuredTimeout, MCP_TRANSPORT_PROBE_TIMEOUT_MS)
+                : MCP_TRANSPORT_PROBE_TIMEOUT_MS
+
         try {
-            streamableClient = this.newClient()
+            const client = await this.connectStreamable(baseUrl, headers, { timeout: probeTimeout })
+            this.preferredRemoteTransport = 'streamable'
+            return client
+        } catch (streamableError: any) {
+            try {
+                const client = await this.connectSse(baseUrl, headers)
+                this.preferredRemoteTransport = 'sse'
+                return client
+            } catch (sseError) {
+                throw new Error(
+                    `Could not connect to MCP server at ${baseUrl.toString()}. Streamable HTTP failed with "${
+                        streamableError?.message ?? streamableError
+                    }", SSE failed with "${(sseError as any)?.message ?? sseError}"`
+                )
+            }
+        }
+    }
+
+    private async connectStreamable(baseUrl: URL, headers: Record<string, string> | undefined, requestOptions?: { timeout: number }) {
+        const client = this.newClient()
+        try {
             const transport = headers
                 ? new StreamableHTTPClientTransport(baseUrl, { requestInit: { headers } })
                 : new StreamableHTTPClientTransport(baseUrl)
-            await streamableClient.connect(transport)
-            return streamableClient
+            await client.connect(transport, requestOptions)
+            return client
         } catch (error) {
-            streamableError = error
-            if (streamableClient) {
-                await streamableClient.close().catch(() => undefined)
-            }
+            await client.close().catch(() => undefined)
+            throw error
         }
+    }
 
-        const sseClient = this.newClient()
+    private async connectSse(baseUrl: URL, headers: Record<string, string> | undefined) {
+        const client = this.newClient()
         try {
             const transport = headers
                 ? new SSEClientTransport(baseUrl, {
@@ -106,16 +137,21 @@ export class MCPToolkit extends BaseToolkit {
                       }
                   })
                 : new SSEClientTransport(baseUrl)
-            await sseClient.connect(transport)
-            return sseClient
-        } catch (sseError) {
-            await sseClient.close().catch(() => undefined)
-            throw new Error(
-                `Could not connect to MCP server at ${baseUrl.toString()}. Streamable HTTP failed with "${
-                    streamableError?.message ?? streamableError
-                }", SSE failed with "${(sseError as any)?.message ?? sseError}"`
-            )
+            await client.connect(transport)
+            return client
+        } catch (error) {
+            await client.close().catch(() => undefined)
+            throw error
         }
+    }
+
+    private enqueue<T>(fn: () => Promise<T>): Promise<T> {
+        const run = this.requestQueue.then(fn, fn)
+        this.requestQueue = run.then(
+            () => undefined,
+            () => undefined
+        )
+        return run
     }
 
     /**
@@ -179,15 +215,14 @@ export class MCPToolkit extends BaseToolkit {
 
     private isConnectionError(error: unknown): boolean {
         const message = error instanceof Error ? error.message : String(error)
-        return message.includes('Connection closed') || message.includes('Not connected')
+        return message.includes('Connection closed') || message.includes('Not connected') || message.includes('Request timed out')
     }
 
     get busy(): boolean {
         return this.inflight > 0
     }
 
-    async close(): Promise<void> {
-        if (this.inflight > 0) return
+    async forceClose(): Promise<void> {
         if (this.idleTimer) {
             clearTimeout(this.idleTimer)
             this.idleTimer = null
@@ -210,32 +245,65 @@ export class MCPToolkit extends BaseToolkit {
         }
     }
 
+    async close(): Promise<void> {
+        if (this.inflight > 0) return
+        await this.forceClose()
+    }
+
     async callTool(name: string, args: Record<string, unknown>): Promise<string> {
         const req: CallToolRequest = { method: 'tools/call', params: { name, arguments: args } }
         const requestOptions = this.serverParams.options
-        const invoke = () => this.withClient((client) => client.request(req, CallToolResultSchema, requestOptions))
-        try {
-            const res = await invoke()
-            return JSON.stringify(res.content)
-        } catch (error) {
-            if (!this.isConnectionError(error)) throw error
-            await this.close()
-            const res = await invoke()
-            return JSON.stringify(res.content)
+
+        // Remote sessions that stay open keep an SSE body alive. The next call then
+        // waits until timeout, and the open fetch holds a connection the rest of the
+        // process needs. Open a client for this call only.
+        if (this.transportType !== 'stdio') {
+            const client = await this.createClient()
+            try {
+                const res = await client.request(req, CallToolResultSchema, requestOptions)
+                return JSON.stringify(res.content)
+            } finally {
+                await client.close().catch(() => undefined)
+            }
         }
+
+        // One stdio process, one request at a time. Overlapped writes deadlock the
+        // child (it stops answering) and the chat request sits until timeout.
+        return this.enqueue(async () => {
+            try {
+                const res = await this.withClient((client) => client.request(req, CallToolResultSchema, requestOptions))
+                return JSON.stringify(res.content)
+            } catch (error) {
+                if (this.isConnectionError(error)) {
+                    await this.forceClose()
+                }
+                throw error
+            }
+        })
     }
 
     async initialize() {
         if (this._tools !== null) return
         if (!this.initPromise) {
-            this.initPromise = this.withClient(async (client) => {
+            const load = async (client: Client) => {
                 if (this._tools !== null) return
                 const requestOptions = this.serverParams.options
                 this._tools = await client.request({ method: 'tools/list' }, ListToolsResultSchema, requestOptions)
                 this.tools = await this.get_tools()
-            }).catch(async (error) => {
+            }
+            this.initPromise = (
+                this.transportType === 'stdio'
+                    ? this.enqueue(() => this.withClient(load))
+                    : this.createClient().then(async (client) => {
+                          try {
+                              await load(client)
+                          } finally {
+                              await client.close().catch(() => undefined)
+                          }
+                      })
+            ).catch(async (error) => {
                 this.initPromise = null
-                await this.close()
+                await this.forceClose()
                 throw error
             })
         }
