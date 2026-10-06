@@ -6,12 +6,21 @@ import { z } from 'zod'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 
+const MCP_IDLE_CLOSE_MS = 120_000
+
 export class MCPToolkit extends BaseToolkit {
     tools: Tool[] = []
     _tools: ListToolsResult | null = null
     model_config: any
     serverParams: StdioServerParameters | any
     transportType: 'stdio' | 'sse'
+    private client: Client | null = null
+    private connectPromise: Promise<Client> | null = null
+    private closing: Promise<void> | null = null
+    private idleTimer: ReturnType<typeof setTimeout> | null = null
+    private inflight = 0
+    private initPromise: Promise<void> | null = null
+
     constructor(serverParams: StdioServerParameters | any, transportType: 'stdio' | 'sse') {
         super()
         this.serverParams = serverParams
@@ -36,8 +45,12 @@ export class MCPToolkit extends BaseToolkit {
             const client = this.newClient()
 
             // Compatible with overridden PATH configuration
+            // Default stderr is "inherit". When the parent stderr pipe fills, the child
+            // blocks on write and the tool call sits there until the SDK timeout.
+            const stderr = this.serverParams.stderr ?? 'pipe'
             const params = {
                 ...this.serverParams,
+                stderr,
                 env: {
                     ...(this.serverParams.env || {}),
                     PATH: process.env.PATH
@@ -45,8 +58,17 @@ export class MCPToolkit extends BaseToolkit {
             }
 
             const transport = new StdioClientTransport(params as StdioServerParameters)
-            await client.connect(transport)
-            return client
+            if (stderr === 'pipe') {
+                // Drain stderr so a full pipe cannot block the child process.
+                transport.stderr?.on('data', () => undefined)
+            }
+            try {
+                await client.connect(transport)
+                return client
+            } catch (error) {
+                await client.close().catch(() => undefined)
+                throw error
+            }
         }
 
         if (this.serverParams.url === undefined) {
@@ -57,19 +79,23 @@ export class MCPToolkit extends BaseToolkit {
         const headers = this.serverParams.headers
 
         let streamableError: any
+        let streamableClient: Client | null = null
         try {
-            const client = this.newClient()
+            streamableClient = this.newClient()
             const transport = headers
                 ? new StreamableHTTPClientTransport(baseUrl, { requestInit: { headers } })
                 : new StreamableHTTPClientTransport(baseUrl)
-            await client.connect(transport)
-            return client
+            await streamableClient.connect(transport)
+            return streamableClient
         } catch (error) {
             streamableError = error
+            if (streamableClient) {
+                await streamableClient.close().catch(() => undefined)
+            }
         }
 
+        const sseClient = this.newClient()
         try {
-            const client = this.newClient()
             const transport = headers
                 ? new SSEClientTransport(baseUrl, {
                       requestInit: {
@@ -80,9 +106,10 @@ export class MCPToolkit extends BaseToolkit {
                       }
                   })
                 : new SSEClientTransport(baseUrl)
-            await client.connect(transport)
-            return client
+            await sseClient.connect(transport)
+            return sseClient
         } catch (sseError) {
+            await sseClient.close().catch(() => undefined)
             throw new Error(
                 `Could not connect to MCP server at ${baseUrl.toString()}. Streamable HTTP failed with "${
                     streamableError?.message ?? streamableError
@@ -91,24 +118,128 @@ export class MCPToolkit extends BaseToolkit {
         }
     }
 
-    async initialize() {
-        if (this._tools === null) {
-            let client: Client | null = null
-            try {
-                client = await this.createClient()
+    /**
+     * One live connection per toolkit. Spawning a stdio process (or opening an HTTP/SSE
+     * session) per tools/list and per tools/call stalls the server under load.
+     */
+    private async getConnectedClient(): Promise<Client> {
+        if (this.closing) {
+            await this.closing
+        }
+        if (this.client) {
+            return this.client
+        }
+        if (!this.connectPromise) {
+            this.connectPromise = this.createClient()
+                .then((client) => {
+                    this.client = client
+                    client.onclose = () => {
+                        if (this.client === client) {
+                            this.client = null
+                            this.connectPromise = null
+                        }
+                    }
+                    return client
+                })
+                .catch((error) => {
+                    this.connectPromise = null
+                    throw error
+                })
+        }
+        return this.connectPromise
+    }
 
-                // Pass timeout options to the request
-                const requestOptions = this.serverParams.options
-                this._tools = await client.request({ method: 'tools/list' }, ListToolsResultSchema, requestOptions)
+    private scheduleIdleClose() {
+        if (this.inflight > 0 || !this.client) return
+        if (this.idleTimer) clearTimeout(this.idleTimer)
+        this.idleTimer = setTimeout(() => {
+            this.idleTimer = null
+            if (this.inflight === 0) {
+                void this.close()
+            }
+        }, MCP_IDLE_CLOSE_MS)
+    }
 
-                this.tools = await this.get_tools()
-            } finally {
-                // Close the initial client after initialization
-                if (client) {
-                    await client.close()
-                }
+    private async withClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
+        this.inflight += 1
+        if (this.idleTimer) {
+            clearTimeout(this.idleTimer)
+            this.idleTimer = null
+        }
+        try {
+            const client = await this.getConnectedClient()
+            return await fn(client)
+        } finally {
+            this.inflight -= 1
+            if (this.inflight === 0) {
+                this.scheduleIdleClose()
             }
         }
+    }
+
+    private isConnectionError(error: unknown): boolean {
+        const message = error instanceof Error ? error.message : String(error)
+        return message.includes('Connection closed') || message.includes('Not connected')
+    }
+
+    get busy(): boolean {
+        return this.inflight > 0
+    }
+
+    async close(): Promise<void> {
+        if (this.inflight > 0) return
+        if (this.idleTimer) {
+            clearTimeout(this.idleTimer)
+            this.idleTimer = null
+        }
+        const client = this.client
+        this.client = null
+        this.connectPromise = null
+        if (!client) return
+        const closing = client.close().then(
+            () => undefined,
+            () => undefined
+        )
+        this.closing = closing
+        try {
+            await closing
+        } finally {
+            if (this.closing === closing) {
+                this.closing = null
+            }
+        }
+    }
+
+    async callTool(name: string, args: Record<string, unknown>): Promise<string> {
+        const req: CallToolRequest = { method: 'tools/call', params: { name, arguments: args } }
+        const requestOptions = this.serverParams.options
+        const invoke = () => this.withClient((client) => client.request(req, CallToolResultSchema, requestOptions))
+        try {
+            const res = await invoke()
+            return JSON.stringify(res.content)
+        } catch (error) {
+            if (!this.isConnectionError(error)) throw error
+            await this.close()
+            const res = await invoke()
+            return JSON.stringify(res.content)
+        }
+    }
+
+    async initialize() {
+        if (this._tools !== null) return
+        if (!this.initPromise) {
+            this.initPromise = this.withClient(async (client) => {
+                if (this._tools !== null) return
+                const requestOptions = this.serverParams.options
+                this._tools = await client.request({ method: 'tools/list' }, ListToolsResultSchema, requestOptions)
+                this.tools = await this.get_tools()
+            }).catch(async (error) => {
+                this.initPromise = null
+                await this.close()
+                throw error
+            })
+        }
+        return this.initPromise
     }
 
     async get_tools(): Promise<Tool[]> {
@@ -146,26 +277,7 @@ export async function MCPTool({
 }): Promise<Tool> {
     return tool(
         async (input): Promise<string> => {
-            // Create a new client for this request
-            let client: Client | null = null
-
-            try {
-                client = await toolkit.createClient()
-                const req: CallToolRequest = { method: 'tools/call', params: { name: name, arguments: input as any } }
-
-                // Pass timeout options to the request
-                const requestOptions = toolkit.serverParams.options
-                const res = await client.request(req, CallToolResultSchema, requestOptions)
-
-                const content = res.content
-                const contentString = JSON.stringify(content)
-                return contentString
-            } finally {
-                // Always close the client after the request completes
-                if (client) {
-                    await client.close()
-                }
-            }
+            return toolkit.callTool(name, (input ?? {}) as Record<string, unknown>)
         },
         {
             name: name,
