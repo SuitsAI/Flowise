@@ -171,7 +171,7 @@ class ChatAnthropic_ChatModels implements INode {
                 label: 'Server-side Fallback',
                 name: 'serverSideFallback',
                 type: 'boolean',
-                default: true,
+                default: false,
                 description:
                     'On a classifier refusal, ask the Claude API to retry the same request on the Fallback Model (<code>fallbacks: [{ model }]</code> and beta <code>server-side-fallback-2026-07-01</code>). Applies only to Claude Fable 5, Fable 5.1, Opus 5, Opus 5.5, and Sonnet 5.5. See <a href="https://platform.claude.com/docs/en/build-with-claude/refusals-and-fallback#server-side-fallback" target="_blank">Anthropic docs</a>.',
                 optional: true,
@@ -266,12 +266,12 @@ class ChatAnthropic_ChatModels implements INode {
             }
         }
 
-        // Default on for saved flows that predate this input. Only models with the refusal
+        // Opt-in: off unless explicitly enabled. Only models with the refusal
         // classifier accept the parameter; others would be rejected with a 400.
         const fallbackModel =
             fallbackModelInput === '' ? '' : fallbackModelInput || DEFAULT_REFUSAL_FALLBACK_MODEL
         const enableServerSideFallback =
-            serverSideFallback !== false && supportsServerSideFallback(modelName) && !!fallbackModel && fallbackModel !== modelName
+            serverSideFallback === true && supportsServerSideFallback(modelName) && !!fallbackModel && fallbackModel !== modelName
         if (enableServerSideFallback) {
             obj.invocationKwargs = { ...obj.invocationKwargs, fallbacks: [{ model: fallbackModel }] }
         }
