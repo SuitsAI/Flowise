@@ -719,6 +719,13 @@
             "name": "chatGoogleGenerativeAI",
             "models": [
                 {
+                    "label": "gemini-nano-banana-2.1",
+                    "name": "gemini-nano-banana-2.1",
+                    "description": "Gemini Nano Banana 2.1 image generation and editing. Accepts text, image, video, and PDF input.",
+                    "input_cost": 1.5e-6,
+                    "output_cost": 7.5e-6
+                },
+                {
                     "label": "gemini-3.5-flash",
                     "name": "gemini-3.5-flash",
                     "input_cost": 0.0000015,

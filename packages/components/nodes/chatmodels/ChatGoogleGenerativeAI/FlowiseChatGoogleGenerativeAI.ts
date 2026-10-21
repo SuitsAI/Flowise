@@ -614,7 +614,15 @@ export class LangchainChatGoogleGenerativeAI
     private client: GenerativeModel
 
     get _isMultimodalModel() {
-        return this.model.includes('vision') || this.model.startsWith('gemini-1.5') || this.model.startsWith('gemini-2') || this.model.startsWith('gemini-3')
+        const model = this.model.toLowerCase()
+        // Nano Banana image models (gemini-nano-banana-*) do not use the gemini-2 / gemini-3 prefix.
+        return (
+            model.includes('vision') ||
+            model.includes('nano-banana') ||
+            model.startsWith('gemini-1.5') ||
+            model.startsWith('gemini-2') ||
+            model.startsWith('gemini-3')
+        )
     }
 
     constructor(fields: GoogleGenerativeAIChatInput) {
