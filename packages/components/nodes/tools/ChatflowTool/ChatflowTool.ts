@@ -25,7 +25,7 @@ class ChatflowTool_Tools implements INode {
     constructor() {
         this.label = 'Chatflow Tool'
         this.name = 'ChatflowTool'
-        this.version = 5.3
+        this.version = 5.4
         this.type = 'ChatflowTool'
         this.icon = 'chatflowTool.svg'
         this.category = 'Tools'
@@ -71,6 +71,15 @@ class ChatflowTool_Tools implements INode {
                 label: 'Return Direct',
                 name: 'returnDirect',
                 type: 'boolean',
+                optional: true
+            },
+            {
+                label: 'Save to Memory',
+                name: 'saveToMemory',
+                description:
+                    "When enabled, this tool's input and output are stored in chat memory (only for tools with this option enabled)",
+                type: 'boolean',
+                default: false,
                 optional: true
             },
             {
@@ -168,6 +177,7 @@ class ChatflowTool_Tools implements INode {
         const inputDescription = nodeData.inputs?.inputDescription as string
         const useQuestionFromChat = nodeData.inputs?.useQuestionFromChat as boolean
         const returnDirect = nodeData.inputs?.returnDirect as boolean
+        const saveToMemory = nodeData.inputs?.saveToMemory as boolean
         const customInput = nodeData.inputs?.customInput as string
         const overrideConfig =
             typeof nodeData.inputs?.overrideConfig === 'string' &&
@@ -207,7 +217,7 @@ class ChatflowTool_Tools implements INode {
 
         let name = _name || 'chatflow_tool'
 
-        return new ChatflowTool({
+        const tool = new ChatflowTool({
             name,
             baseURL,
             description,
@@ -219,6 +229,9 @@ class ChatflowTool_Tools implements INode {
             input: toolInput,
             overrideConfig
         })
+        ;(tool as any).flowiseSaveToMemory = saveToMemory === true
+
+        return tool
     }
 }
 
