@@ -271,7 +271,7 @@ class ChatAnthropic_ChatModels implements INode {
         const fallbackModel =
             fallbackModelInput === '' ? '' : fallbackModelInput || DEFAULT_REFUSAL_FALLBACK_MODEL
         const enableServerSideFallback =
-            serverSideFallback !== false && supportsServerSideFallback(modelName) && !!fallbackModel && fallbackModel !== modelName
+            serverSideFallback === true && supportsServerSideFallback(modelName) && !!fallbackModel && fallbackModel !== modelName
         if (enableServerSideFallback) {
             obj.invocationKwargs = { ...obj.invocationKwargs, fallbacks: [{ model: fallbackModel }] }
         }
