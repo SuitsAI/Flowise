@@ -1,6 +1,7 @@
 import { BaseTracer, Run } from '@langchain/core/tracers/base'
 import { Logger } from 'winston'
 import { AgentRun, elapsed, tryJsonStringify } from './handler'
+import { logLLMError } from './error'
 
 export class MetricsLogger extends BaseTracer {
     name = 'console_callback_handler' as const
@@ -92,12 +93,7 @@ export class MetricsLogger extends BaseTracer {
 
     onLLMError(run: Run) {
         const crumbs = this.getBreadcrumbs(run)
-        this.logger.verbose(
-            `[${this.orgId}]: [llm/error] [${crumbs}] [${elapsed(run)}] LLM run errored with error: ${tryJsonStringify(
-                run.error,
-                '[error]'
-            )}`
-        )
+        logLLMError(this.logger, `[${this.orgId}]: [llm/error] [${crumbs}] [${elapsed(run)}]`, run.error)
     }
 
     onToolStart(run: Run) {

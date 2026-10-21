@@ -4,7 +4,7 @@ import { pull } from 'langchain/hub'
 import { Tool } from '@langchain/core/tools'
 import type { PromptTemplate } from '@langchain/core/prompts'
 import { BaseLanguageModel } from '@langchain/core/language_models/base'
-import { additionalCallbacks } from '../../../src/handler'
+import { additionalCallbacks, ConsoleCallbackHandler } from '../../../src/handler'
 import { getBaseClasses } from '../../../src/utils'
 import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
 import { createReactAgent } from '../../../src/agents'
@@ -102,9 +102,10 @@ class ReActAgentLLM_Agents implements INode {
         })
 
         const callbacks = await additionalCallbacks(nodeData, options)
+        const loggerHandler = new ConsoleCallbackHandler(options.logger, options?.orgId)
 
         const result = await executor.invoke({ input }, {
-            callbacks,
+            callbacks: [loggerHandler, ...callbacks],
             signal: (options.signal as AbortController | undefined)?.signal
         })
 

@@ -17,8 +17,9 @@ import { zodToJsonSchema } from 'zod-to-json-schema'
 import { AnalyticHandler } from '../../../src/handler'
 import { Moderation, checkInputs, streamResponse } from '../../moderation/Moderation'
 import { formatResponse } from '../../outputparsers/OutputParserHelpers'
-import { addSingleFileToStorage } from '../../../src/storageUtils'
+import { addSingleFileToStorage, logStorageFailure } from '../../../src/storageUtils'
 import { DynamicStructuredTool } from '../../tools/OpenAPIToolkit/core'
+import { getErrorMessage, logLLMError } from '../../../src/error'
 
 const lenticularBracketRegex = /【[^】]*】/g
 const imageRegex = /<img[^>]*\/>/g
@@ -605,10 +606,14 @@ class OpenAIAssistant_Agents implements INode {
                                     isStreamingStarted
                                 })
                             } catch (error) {
-                                console.error('Error submitting tool outputs:', error)
+                                logLLMError(
+                                    options?.logger,
+                                    `OpenAI Assistant submit tool outputs threadId=${threadId} runId=${runThreadId} chatId=${options?.chatId ?? ''}`,
+                                    error
+                                )
                                 await openai.beta.threads.runs.cancel(threadId, runThreadId)
 
-                                const errMsg = `Error submitting tool outputs. Thread ID: ${threadId}. Run ID: ${runThreadId}`
+                                const errMsg = `Error submitting tool outputs. Thread ID: ${threadId}. Run ID: ${runThreadId}. ${getErrorMessage(error)}`
 
                                 await analyticHandlers.onLLMError(llmIds, errMsg)
                                 await analyticHandlers.onChainError(parentIds, errMsg, true)
@@ -930,8 +935,9 @@ class OpenAIAssistant_Agents implements INode {
                 assistant: { assistantId: openAIAssistantId, threadId, runId: runThreadId, messages: messageData }
             }
         } catch (error) {
-            await analyticHandlers.onChainError(parentIds, error, true)
-            throw new Error(error)
+            logLLMError(options?.logger, `OpenAI Assistant chatId=${options?.chatId ?? ''}`, error)
+            await analyticHandlers.onChainError(parentIds, getErrorMessage(error), true)
+            throw error
         }
     }
 }
@@ -985,7 +991,7 @@ const downloadFile = async (
 
         return { path, totalSize }
     } catch (error) {
-        console.error('Error downloading or writing the file:', error)
+        logStorageFailure(`OpenAI file save failed file=${fileName} orgId=${orgId}`, error)
         return { path: '', totalSize: 0 }
     }
 }
@@ -1135,10 +1141,14 @@ async function handleToolSubmission(params: ToolSubmissionParams): Promise<ToolS
             isStreamingStarted: updatedIsStreamingStarted
         }
     } catch (error) {
-        console.error('Error submitting tool outputs:', error)
+        logLLMError(
+            options?.logger,
+            `OpenAI Assistant submit tool outputs threadId=${threadId} runId=${runThreadId} chatId=${options?.chatId ?? ''}`,
+            error
+        )
         await openai.beta.threads.runs.cancel(threadId, runThreadId)
 
-        const errMsg = `Error submitting tool outputs. Thread ID: ${threadId}. Run ID: ${runThreadId}`
+        const errMsg = `Error submitting tool outputs. Thread ID: ${threadId}. Run ID: ${runThreadId}. ${getErrorMessage(error)}`
 
         await analyticHandlers.onLLMError(llmIds, errMsg)
         await analyticHandlers.onChainError(parentIds, errMsg, true)

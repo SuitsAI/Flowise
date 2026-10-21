@@ -19,7 +19,7 @@ import { Tool } from '@langchain/core/tools'
 import { ARTIFACTS_PREFIX, SOURCE_DOCUMENTS_PREFIX, TOOL_ARGS_PREFIX } from '../../../src/agents'
 import { flatten } from 'lodash'
 import zodToJsonSchema from 'zod-to-json-schema'
-import { getErrorMessage } from '../../../src/error'
+import { getErrorMessage, isAbortError, logLLMError } from '../../../src/error'
 import { extractLLMStreamDeltas, getAnswerTextFromMessageContent } from '../../../src/streamingReasoning'
 import { DataSource } from 'typeorm'
 import {
@@ -30,7 +30,7 @@ import {
     updateFlowState
 } from '../utils'
 import { convertMultiOptionsToStringArray, getCredentialData, getCredentialParam, processTemplateVariables } from '../../../src/utils'
-import { addSingleFileToStorage } from '../../../src/storageUtils'
+import { addSingleFileToStorage, logStorageFailure } from '../../../src/storageUtils'
 import fetch from 'node-fetch'
 
 interface ITool {
@@ -1265,14 +1265,21 @@ class Agent_Agentflow implements INode {
                 ]
             }
         } catch (error) {
+            logLLMError(
+                options?.logger,
+                `Agent node id=${nodeData?.id ?? ''} label=${nodeData?.label ?? ''} model=${nodeData?.inputs?.agentModel ?? ''} chatId=${options?.chatId ?? ''}`,
+                error
+            )
             if (options.analyticHandlers && llmIds) {
-                await options.analyticHandlers.onLLMError(llmIds, error instanceof Error ? error.message : String(error))
+                await options.analyticHandlers.onLLMError(llmIds, getErrorMessage(error))
             }
 
-            if (error instanceof Error && error.message === 'Aborted') {
+            if (isAbortError(error)) {
                 throw error
             }
-            throw new Error(`Error in Agent node: ${error instanceof Error ? error.message : String(error)}`)
+            const wrapped = new Error(`Error in Agent node: ${getErrorMessage(error)}`)
+            ;(wrapped as Error & { cause?: unknown }).cause = error
+            throw wrapped
         }
     }
 
@@ -1371,6 +1378,7 @@ class Agent_Agentflow implements INode {
         outputItem: any,
         options: ICommonObject
     ): Promise<{ filePath: string; fileName: string; totalSize: number } | null> {
+        let fileName = ''
         try {
             if (!outputItem.result) {
                 return null
@@ -1382,7 +1390,7 @@ class Agent_Agentflow implements INode {
 
             // Determine file extension and MIME type
             const outputFormat = outputItem.output_format || 'png'
-            const fileName = `generated_image_${outputItem.id || Date.now()}.${outputFormat}`
+            fileName = `generated_image_${outputItem.id || Date.now()}.${outputFormat}`
             const mimeType = outputFormat === 'png' ? 'image/png' : 'image/jpeg'
 
             // Save the image using the existing storage utility
@@ -1397,7 +1405,10 @@ class Agent_Agentflow implements INode {
 
             return { filePath: path, fileName, totalSize }
         } catch (error) {
-            console.error('Error saving base64 image:', error)
+            logStorageFailure(
+                `save base64 image failed file=${fileName} orgId=${options?.orgId ?? ''} chatflowId=${options?.chatflowid ?? ''} chatId=${options?.chatId ?? ''}`,
+                error
+            )
             return null
         }
     }
@@ -1568,23 +1579,18 @@ class Agent_Agentflow implements INode {
     ): Promise<AIMessageChunk> {
         let response = new AIMessageChunk('')
 
-        try {
-            for await (const chunk of await llmNodeInstance.stream(messages, { signal: abortController?.signal })) {
-                if (sseStreamer) {
-                    const { reasoningDelta, textDelta } = extractLLMStreamDeltas(chunk, '')
-                    if (reasoningDelta) {
-                        sseStreamer.streamLLMReasoningEvent(chatId, reasoningDelta)
-                    }
-                    if (textDelta) {
-                        sseStreamer.streamTokenEvent(chatId, textDelta)
-                    }
+        for await (const chunk of await llmNodeInstance.stream(messages, { signal: abortController?.signal })) {
+            if (sseStreamer) {
+                const { reasoningDelta, textDelta } = extractLLMStreamDeltas(chunk, '')
+                if (reasoningDelta) {
+                    sseStreamer.streamLLMReasoningEvent(chatId, reasoningDelta)
                 }
-
-                response = response.concat(chunk)
+                if (textDelta) {
+                    sseStreamer.streamTokenEvent(chatId, textDelta)
+                }
             }
-        } catch (error) {
-            console.error('Error during streaming:', error)
-            throw error
+
+            response = response.concat(chunk)
         }
         if (Array.isArray(response.content) && response.content.length > 0) {
             response.content = getAnswerTextFromMessageContent(response.content)
@@ -2383,7 +2389,10 @@ class Agent_Agentflow implements INode {
                         })
                     }
                 } catch (error) {
-                    console.error('Error processing image generation artifact:', error)
+                    logStorageFailure(
+                        `image generation artifact failed orgId=${options?.orgId ?? ''} chatflowId=${options?.chatflowid ?? ''} chatId=${options?.chatId ?? ''}`,
+                        error
+                    )
                 }
             }
         }
@@ -2443,7 +2452,10 @@ class Agent_Agentflow implements INode {
 
             return { filePath: path, totalSize }
         } catch (error) {
-            console.error('Error downloading container file:', error)
+            logStorageFailure(
+                `container file save failed file=${filename} orgId=${options?.orgId ?? ''} chatflowId=${options?.chatflowid ?? ''} chatId=${options?.chatId ?? ''}`,
+                error
+            )
             return null
         }
     }

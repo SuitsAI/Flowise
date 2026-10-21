@@ -50,7 +50,7 @@ import { ChatFlow } from '../database/entities/ChatFlow'
 import { Variable } from '../database/entities/Variable'
 import { replaceInputsWithConfig, constructGraphs, getAPIOverrideConfig } from '../utils'
 import logger from './logger'
-import { getErrorMessage } from '../errors/utils'
+import { formatErrorForLog, getErrorMessage } from '../errors/utils'
 import { Execution } from '../database/entities/Execution'
 import { utilAddChatMessage } from './addChatMesage'
 import { CachePool } from '../CachePool'
@@ -1434,7 +1434,7 @@ const executeNode = async ({
 
         return { result: results, agentFlowExecutedData, humanInput: updatedHumanInput }
     } catch (error) {
-        logger.error(`[server]: Error executing node ${nodeId}: ${getErrorMessage(error)}`)
+        logger.error(`[server]: Error executing node ${nodeId}:\n${formatErrorForLog(error)}`)
         throw error
     }
 }
@@ -2046,6 +2046,11 @@ export const executeAgentFlow = async ({
             const isAborted = getErrorMessage(error).includes('Aborted')
             const errorStatus = isAborted ? 'TERMINATED' : 'ERROR'
             const errorMessage = isAborted ? 'Flow execution was cancelled' : getErrorMessage(error)
+            if (!isAborted) {
+                logger.error(
+                    `[server]: Agentflow node failed id=${currentNode.nodeId} label=${reactFlowNode.data.label} chatId=${chatId}\n${formatErrorForLog(error)}`
+                )
+            }
 
             status = errorStatus
 

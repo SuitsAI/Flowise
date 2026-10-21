@@ -5,7 +5,7 @@ import { Tool } from '@langchain/core/tools'
 import type { PromptTemplate } from '@langchain/core/prompts'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { pull } from 'langchain/hub'
-import { additionalCallbacks } from '../../../src/handler'
+import { additionalCallbacks, ConsoleCallbackHandler } from '../../../src/handler'
 import { IVisionChatModal, FlowiseMemory, ICommonObject, IMessage, INode, INodeData, INodeParams } from '../../../src/Interface'
 import { getBaseClasses } from '../../../src/utils'
 import { createReactAgent } from '../../../src/agents'
@@ -136,12 +136,13 @@ class ReActAgentChat_Agents implements INode {
         })
 
         const callbacks = await additionalCallbacks(nodeData, options)
+        const loggerHandler = new ConsoleCallbackHandler(options.logger, options?.orgId)
 
         const chatHistory = ((await memory.getChatMessages(this.sessionId, false, prependMessages)) as IMessage[]) ?? []
         const chatHistoryString = chatHistory.map((hist) => hist.message).join('\\n')
 
         const result = await executor.invoke({ input, chat_history: chatHistoryString }, {
-            callbacks,
+            callbacks: [loggerHandler, ...callbacks],
             signal: (options.signal as AbortController | undefined)?.signal
         })
 

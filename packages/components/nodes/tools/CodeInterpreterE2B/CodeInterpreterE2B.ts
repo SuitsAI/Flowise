@@ -9,7 +9,7 @@ import {
 import { StructuredTool, ToolInputParsingException, ToolParams } from '@langchain/core/tools'
 import { Sandbox } from '@e2b/code-interpreter'
 import { z } from 'zod'
-import { addSingleFileToStorage } from '../../../src/storageUtils'
+import { addSingleFileToStorage, logStorageFailure } from '../../../src/storageUtils'
 import { CallbackManager, CallbackManagerForToolRun, Callbacks, parseCallbackConfigArg } from '@langchain/core/callbacks/manager'
 import { RunnableConfig } from '@langchain/core/runnables'
 import { ARTIFACTS_PREFIX } from '../../../src/agents'
@@ -393,7 +393,10 @@ export class E2BTool extends StructuredTool {
                         )
                         artifacts.push({ type: 'file', data: storagePath })
                     } catch (readErr) {
-                        // Skip single file read errors (e.g. permission, deleted)
+                        logStorageFailure(
+                            `Code Interpreter file save failed file=${entry.name} orgId=${this.orgId} chatflowId=${this.chatflowid} chatId=${flowConfig?.chatId ?? ''}`,
+                            readErr
+                        )
                     }
                 }
             } catch {

@@ -37,6 +37,7 @@ import {
     restructureMessages,
     checkMessageHistory
 } from '../commonUtils'
+import { logLLMError } from '../../../src/error'
 
 const TAB_IDENTIFIER = 'selectedUpdateStateMemoryTab'
 const customOutputFuncDesc = `This is only applicable when you have a custom State at the START node. After agent execution, you might want to update the State values`
@@ -643,7 +644,12 @@ async function agentNode(
             }
         }
     } catch (error) {
-        throw new Error(error)
+        logLLMError(
+            options?.logger,
+            `Sequential LLM node id=${nodeData?.id ?? ''} name=${name} chatId=${options?.chatId ?? ''}`,
+            error
+        )
+        throw error
     }
 }
 

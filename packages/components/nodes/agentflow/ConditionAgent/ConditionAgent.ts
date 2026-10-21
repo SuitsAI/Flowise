@@ -9,6 +9,7 @@ import {
 } from '../utils'
 import { CONDITION_AGENT_SYSTEM_PROMPT, DEFAULT_SUMMARIZER_TEMPLATE } from '../prompt'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
+import { getErrorMessage, isAbortError, logLLMError } from '../../../src/error'
 
 class ConditionAgent_Agentflow implements INode {
     label: string
@@ -455,14 +456,21 @@ class ConditionAgent_Agentflow implements INode {
 
             return returnOutput
         } catch (error) {
+            logLLMError(
+                options?.logger,
+                `Condition Agent node id=${nodeData?.id ?? ''} label=${nodeData?.label ?? ''} model=${nodeData?.inputs?.conditionAgentModel ?? ''} chatId=${options?.chatId ?? ''}`,
+                error
+            )
             if (options.analyticHandlers && llmIds) {
-                await options.analyticHandlers.onLLMError(llmIds, error instanceof Error ? error.message : String(error))
+                await options.analyticHandlers.onLLMError(llmIds, getErrorMessage(error))
             }
 
-            if (error instanceof Error && error.message === 'Aborted') {
+            if (isAbortError(error)) {
                 throw error
             }
-            throw new Error(`Error in Condition Agent node: ${error instanceof Error ? error.message : String(error)}`)
+            const wrapped = new Error(`Error in Condition Agent node: ${getErrorMessage(error)}`)
+            ;(wrapped as Error & { cause?: unknown }).cause = error
+            throw wrapped
         }
     }
 

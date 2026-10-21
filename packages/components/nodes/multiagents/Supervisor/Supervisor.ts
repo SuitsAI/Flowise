@@ -22,6 +22,7 @@ import { ChatAnthropic } from '../../chatmodels/ChatAnthropic/FlowiseChatAnthrop
 import { addImagesToMessages, llmSupportsVision } from '../../../src/multiModalUtils'
 import { ChatGoogleGenerativeAI } from '../../chatmodels/ChatGoogleGenerativeAI/FlowiseChatGoogleGenerativeAI'
 import { AzureChatOpenAI } from '../../chatmodels/AzureChatOpenAI/FlowiseAzureChatOpenAI'
+import { isAbortError, logLLMError } from '../../../src/error'
 
 const sysPrompt = `You are a supervisor tasked with managing a conversation between the following workers: {team_members}.
 Given the following user request, respond with the worker to act next.
@@ -701,7 +702,11 @@ async function agentNode(
         result.additional_kwargs = { ...result.additional_kwargs, ...additional_kwargs }
         return result
     } catch (error) {
-        throw new Error('Aborted!')
+        logLLMError(undefined, `Supervisor node id=${nodeId}`, error)
+        if (isAbortError(error)) {
+            throw new Error('Aborted!')
+        }
+        throw error
     }
 }
 

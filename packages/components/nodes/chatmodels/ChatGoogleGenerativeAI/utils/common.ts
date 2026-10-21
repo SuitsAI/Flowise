@@ -34,7 +34,7 @@ import { ChatGeneration, ChatGenerationChunk, ChatResult } from '@langchain/core
 import { isLangChainTool } from '@langchain/core/utils/function_calling'
 import { v4 as uuidv4 } from 'uuid'
 import { ARTIFACTS_PREFIX } from '../../../../src/agents'
-import { addSingleFileToStorage } from '../../../../src/storageUtils'
+import { addSingleFileToStorage, logStorageFailure } from '../../../../src/storageUtils'
 import { GoogleGenerativeAIToolType } from './types.js'
 import { jsonSchemaToGeminiParameters, schemaToGenerativeAIParameters } from './zod_to_genai_parameters.js'
 
@@ -679,11 +679,17 @@ export function mapGenerateContentResultToChatResult(
                                 extra.chatId
                             ).then(({ path }: { path: string }) => {
                                 artifacts.push({ type: fileExtension, data: path })
-                            }).catch((error: any) => {
-                                console.error('Error storing artifact:', error)
+                            }).catch((error: unknown) => {
+                                logStorageFailure(
+                                    `Gemini inline image save failed file=${filename} orgId=${extra?.orgId ?? ''} chatflowId=${extra?.chatflowid ?? ''} chatId=${extra?.chatId ?? ''}`,
+                                    error
+                                )
                             })
                         } catch (error) {
-                            console.error('Error processing inlineData artifact:', error)
+                            logStorageFailure(
+                                `Gemini inline image save failed file=${filename} orgId=${extra?.orgId ?? ''} chatflowId=${extra?.chatflowid ?? ''} chatId=${extra?.chatId ?? ''}`,
+                                error
+                            )
                         }
                     } else {
                         // If no context available, add base64 data as fallback
@@ -882,7 +888,10 @@ export async function convertResponseContentToChatGenerationChunk(
                                 artifact: { type: fileExtension, data: path }
                             })
                         } catch (error) {
-                            console.error('Error storing artifact:', error)
+                            logStorageFailure(
+                                `Gemini inline image save failed file=${filename} orgId=${extra?.orgId ?? ''} chatflowId=${extra?.chatflowid ?? ''} chatId=${extra?.chatId ?? ''}`,
+                                error
+                            )
                             // Fallback to base64 data
                             content.push({
                                 type: 'artifact',
