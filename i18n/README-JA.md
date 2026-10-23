@@ -19,7 +19,7 @@
 
 ## ⚡ クイックスタート
 
-[NodeJS](https://nodejs.org/en/download) >= 18.15.0 をダウンロードしてインストール
+[NodeJS](https://nodejs.org/en/download) >= 22.23.4 をダウンロードしてインストール
 
 1. Flowise のインストール
     ```bash

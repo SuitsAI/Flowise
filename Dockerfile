@@ -4,7 +4,8 @@
 # Run image
 # docker run -d -p 3000:3000 flowise
 
-FROM node:20-alpine
+ARG NODE_VERSION=22.23.4
+FROM node:${NODE_VERSION}-alpine
 
 # Install system dependencies and build tools
 RUN apk update && \
@@ -37,7 +38,7 @@ RUN pnpm install && \
 # Give the node user ownership of the application files
 RUN chown -R node:node .
 
-# Switch to non-root user (node user already exists in node:20-alpine)
+# Switch to non-root user (node user already exists in the Node image)
 USER node
 
 # Create serviceAccount.json from GSC_SERVICE_ACCOUNT build argument
