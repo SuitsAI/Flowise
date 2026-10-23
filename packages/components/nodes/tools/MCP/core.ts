@@ -421,8 +421,10 @@ function createSchemaModel(
                     return z.array(createPropertySchema(schema.items)).describe(schema.description || '')
                 }
                 return z.array(z.any()).describe(schema.description || '')
-            case 'object':
-                if (schema.properties) {
+            case 'object': {
+                // An empty `properties: {}` (e.g. Composio's free-form `arguments` object) must not
+                // produce `z.object({})`, which strips every key the LLM supplies before the call.
+                if (schema.properties && Object.keys(schema.properties).length > 0) {
                     // Recursively build the object schema
                     const properties = Object.entries(schema.properties).reduce((acc, [key, propSchema]) => {
                         acc[key] = createPropertySchema(propSchema)
@@ -435,15 +437,19 @@ function createSchemaModel(
                             properties[key] = properties[key].optional()
                         }
                     }
-                    return z.object(properties).describe(schema.description || '')
-                } else if (schema.additionalProperties) {
+                    let objectSchema = z.object(properties)
                     if (schema.additionalProperties === true) {
-                        return z.record(z.any()).describe(schema.description || '')
-                    } else if (typeof schema.additionalProperties === 'object') {
-                        return z.record(createPropertySchema(schema.additionalProperties)).describe(schema.description || '')
+                        objectSchema = objectSchema.catchall(z.any())
+                    } else if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+                        objectSchema = objectSchema.catchall(createPropertySchema(schema.additionalProperties))
                     }
+                    return objectSchema.describe(schema.description || '')
+                }
+                if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+                    return z.record(createPropertySchema(schema.additionalProperties)).describe(schema.description || '')
                 }
                 return z.record(z.any()).describe(schema.description || '')
+            }
             default:
                 return z.any().describe(schema.description || '')
         }
