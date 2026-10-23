@@ -38,11 +38,8 @@ import {
     IMessage,
     FlowiseMemory,
     IFileUpload,
-    getS3Config,
-    setStorageLogger
+    getS3Config
 } from 'flowise-components'
-
-setStorageLogger(logger)
 import { randomBytes } from 'crypto'
 import { AES, enc } from 'crypto-js'
 import multer from 'multer'

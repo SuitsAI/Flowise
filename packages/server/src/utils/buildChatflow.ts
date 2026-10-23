@@ -65,7 +65,7 @@ import logger from './logger'
 import { utilAddChatMessage } from './addChatMesage'
 import { checkPredictions, checkStorage, updatePredictionsUsage, updateStorageUsage } from './quotaUsage'
 import { buildAgentGraph } from './buildAgentGraph'
-import { formatErrorForLog, getErrorMessage } from '../errors/utils'
+import { getErrorMessage } from '../errors/utils'
 import { FLOWISE_METRIC_COUNTERS, FLOWISE_COUNTER_STATUS, IMetricsProvider } from '../Interface.Metrics'
 import { getWorkspaceSearchOptions } from '../enterprise/utils/ControllerServiceUtils'
 import { OMIT_QUEUE_JOB_DATA } from './constants'
@@ -1188,7 +1188,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
             return result
         }
     } catch (e) {
-        logger.error(`[server]:${organizationId}/${chatflow.id}/${chatId} Error:\n${formatErrorForLog(e)}`)
+        logger.error(`[server]:${organizationId}/${chatflow.id}/${chatId} Error:`, e)
         appServer.abortControllerPool.remove(`${chatflow.id}_${chatId}`)
         if (isAbortError(e)) {
             const sseStreamer = appServer.sseStreamer

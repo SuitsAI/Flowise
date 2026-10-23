@@ -12,7 +12,6 @@ import {
 } from '../../../src/Interface'
 import { AIMessageChunk, BaseMessageLike } from '@langchain/core/messages'
 import { DEFAULT_HUMAN_INPUT_DESCRIPTION, DEFAULT_HUMAN_INPUT_DESCRIPTION_HTML } from '../prompt'
-import { logLLMError } from '../../../src/error'
 
 class HumanInput_Agentflow implements INode {
     label: string
@@ -217,47 +216,38 @@ class HumanInput_Agentflow implements INode {
                 }
             } else {
                 if (model && modelConfig) {
-                    try {
-                        const nodeInstanceFilePath = options.componentNodes[model].filePath as string
-                        const nodeModule = await import(nodeInstanceFilePath)
-                        const newNodeInstance = new nodeModule.nodeClass()
-                        const newNodeData = {
-                            ...nodeData,
-                            credential: modelConfig['FLOWISE_CREDENTIAL_ID'],
-                            inputs: {
-                                ...nodeData.inputs,
-                                ...modelConfig
-                            }
+                    const nodeInstanceFilePath = options.componentNodes[model].filePath as string
+                    const nodeModule = await import(nodeInstanceFilePath)
+                    const newNodeInstance = new nodeModule.nodeClass()
+                    const newNodeData = {
+                        ...nodeData,
+                        credential: modelConfig['FLOWISE_CREDENTIAL_ID'],
+                        inputs: {
+                            ...nodeData.inputs,
+                            ...modelConfig
                         }
-                        const llmNodeInstance = (await newNodeInstance.init(newNodeData, '', options)) as BaseChatModel
-                        const messages = [
-                            ...pastChatHistory,
-                            ...runtimeChatHistory,
-                            {
-                                role: 'user',
-                                content: humanInputModelPrompt || DEFAULT_HUMAN_INPUT_DESCRIPTION
-                            }
-                        ]
+                    }
+                    const llmNodeInstance = (await newNodeInstance.init(newNodeData, '', options)) as BaseChatModel
+                    const messages = [
+                        ...pastChatHistory,
+                        ...runtimeChatHistory,
+                        {
+                            role: 'user',
+                            content: humanInputModelPrompt || DEFAULT_HUMAN_INPUT_DESCRIPTION
+                        }
+                    ]
 
-                        let response: AIMessageChunk = new AIMessageChunk('')
-                        if (isStreamable) {
-                            const sseStreamer: IServerSideEventStreamer = options.sseStreamer as IServerSideEventStreamer
-                            for await (const chunk of await llmNodeInstance.stream(messages)) {
-                                sseStreamer.streamTokenEvent(chatId, chunk.content.toString())
-                                response = response.concat(chunk)
-                            }
-                            humanInputDescription = response.content as string
-                        } else {
-                            const response = await llmNodeInstance.invoke(messages)
-                            humanInputDescription = response.content as string
+                    let response: AIMessageChunk = new AIMessageChunk('')
+                    if (isStreamable) {
+                        const sseStreamer: IServerSideEventStreamer = options.sseStreamer as IServerSideEventStreamer
+                        for await (const chunk of await llmNodeInstance.stream(messages)) {
+                            sseStreamer.streamTokenEvent(chatId, chunk.content.toString())
+                            response = response.concat(chunk)
                         }
-                    } catch (error) {
-                        logLLMError(
-                            options?.logger,
-                            `Human Input node id=${nodeData?.id ?? ''} label=${nodeData?.label ?? ''} model=${model} chatId=${chatId}`,
-                            error
-                        )
-                        throw error
+                        humanInputDescription = response.content as string
+                    } else {
+                        const response = await llmNodeInstance.invoke(messages)
+                        humanInputDescription = response.content as string
                     }
                 }
             }

@@ -51,7 +51,6 @@ import {
     checkMessageHistory
 } from '../commonUtils'
 import { END, StateGraph } from '@langchain/langgraph'
-import { logLLMError } from '../../../src/error'
 import { StructuredTool } from '@langchain/core/tools'
 
 const defaultApprovalPrompt = `You are about to execute tool: {tools}. Ask if user want to proceed`
@@ -872,12 +871,7 @@ async function agentNode(
             }
         }
     } catch (error) {
-        logLLMError(
-            options?.logger,
-            `Sequential agent node id=${nodeData?.id ?? ''} name=${name} chatId=${options?.chatId ?? ''}`,
-            error
-        )
-        throw error
+        throw new Error(error)
     }
 }
 

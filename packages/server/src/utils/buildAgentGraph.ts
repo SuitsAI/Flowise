@@ -23,7 +23,7 @@ import { IChatFlow, IComponentNodes, IDepthQueue, IReactFlowNode, IReactFlowEdge
 import { databaseEntities, clearSessionMemory, getAPIOverrideConfig } from '../utils'
 import { replaceInputsWithConfig, resolveVariables } from '.'
 import { InternalFlowiseError } from '../errors/internalFlowiseError'
-import { formatErrorForLog, getErrorMessage } from '../errors/utils'
+import { getErrorMessage } from '../errors/utils'
 import logger from './logger'
 import { Variable } from '../database/entities/Variable'
 import { getWorkspaceSearchOptions } from '../enterprise/utils/ControllerServiceUtils'
@@ -399,12 +399,11 @@ export const buildAgentGraph = async ({
                 }
                 return { finalResult, agentReasoning }
             }
-            logger.error(`[server]: [${orgId}]: Agent graph execution error:\n${formatErrorForLog(e)}`)
             throw new Error(getErrorMessage(e))
         }
         return streamResults
     } catch (e) {
-        logger.error(`[server]: [${orgId}]: Error:\n${formatErrorForLog(e)}`)
+        logger.error(`[server]: [${orgId}]: Error:`, e)
         throw new InternalFlowiseError(StatusCodes.INTERNAL_SERVER_ERROR, `Error buildAgentGraph - ${getErrorMessage(e)}`)
     }
 }
@@ -1053,7 +1052,7 @@ const compileSeqAgentsGraph = async (params: SeqAgentsGraphParams) => {
             configurable: config
         })
     } catch (e) {
-        logger.error(`[${options.orgId}]: Error compile graph\n${formatErrorForLog(e)}`)
+        logger.error(`[${options.orgId}]: Error compile graph`, e)
         throw new InternalFlowiseError(StatusCodes.INTERNAL_SERVER_ERROR, `Error compile graph - ${getErrorMessage(e)}`)
     }
 }

@@ -12,60 +12,8 @@ import fs from 'fs'
 import { Readable } from 'node:stream'
 import path from 'path'
 import sanitize from 'sanitize-filename'
-import { formatErrorForLog } from './error'
 import { getUserHome } from './utils'
 import { isPathTraversal, isValidUUID } from './validator'
-
-type StorageLog = {
-    info: (message: string) => void
-    error: (message: string) => void
-}
-
-const loggedStorageErrors = new WeakSet<object>()
-
-let storageLog: StorageLog = {
-    info: (message) => console.info(message),
-    error: (message) => console.error(message)
-}
-
-/** Server registers its logger so GCS save lines land in the same log as the rest of the process. */
-export const setStorageLogger = (logger: StorageLog): void => {
-    storageLog = logger
-}
-
-export const logStorageFailure = (context: string, error: unknown): void => {
-    if (typeof error === 'object' && error !== null) {
-        if (loggedStorageErrors.has(error)) return
-        loggedStorageErrors.add(error)
-    }
-    storageLog.error(`[storage] ${context}\n${formatErrorForLog(error)}`)
-}
-
-const gcsBucketName = (): string => process.env.GOOGLE_CLOUD_STORAGE_BUCKET_NAME ?? ''
-
-type GcsWriteOptions = {
-    contentType?: string
-    metadata?: { contentEncoding?: string }
-}
-
-const saveBufferToGcs = async (objectPath: string, buffer: Buffer, streamOptions?: GcsWriteOptions): Promise<void> => {
-    const detail = `bucket=${gcsBucketName()} path=${objectPath} mime=${streamOptions?.contentType ?? ''} bytes=${buffer?.length ?? 0}`
-    storageLog.info(`[storage] GCS save start ${detail}`)
-    try {
-        const { bucket } = getGcsClient()
-        const file = bucket.file(objectPath)
-        await new Promise<void>((resolve, reject) => {
-            const stream = streamOptions ? file.createWriteStream(streamOptions) : file.createWriteStream()
-            stream.on('error', (err) => reject(err))
-            stream.on('finish', () => resolve())
-            stream.end(buffer)
-        })
-        storageLog.info(`[storage] GCS save ok ${detail}`)
-    } catch (error) {
-        logStorageFailure(`GCS save failed ${detail}`, error)
-        throw error
-    }
-}
 
 const dirSize = async (directoryPath: string) => {
     let totalSize = 0
@@ -128,30 +76,25 @@ export const addBase64FilesToStorage = async (
 
         return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: bf.length / 1024 / 1024 }
     } else if (storageType === 'gcs') {
-        let objectPath = ''
-        let mime = ''
-        let bytes = 0
-        try {
-            const splitDataURI = fileBase64.split(',')
-            const filename = splitDataURI.pop()?.split(':')[1] ?? ''
-            const bf = Buffer.from(splitDataURI.pop() || '', 'base64')
-            mime = splitDataURI[0].split(':')[1].split(';')[0]
-            bytes = bf.length
-            const sanitizedFilename = _sanitizeFilename(filename)
-            const normalizedChatflowid = chatflowid.replace(/\\/g, '/')
-            const normalizedFilename = sanitizedFilename.replace(/\\/g, '/')
-            objectPath = `${normalizedChatflowid}/${normalizedFilename}`
-            await saveBufferToGcs(objectPath, bf, { contentType: mime, metadata: { contentEncoding: 'base64' } })
-            fileNames.push(sanitizedFilename)
+        const { bucket } = getGcsClient()
+        const splitDataURI = fileBase64.split(',')
+        const filename = splitDataURI.pop()?.split(':')[1] ?? ''
+        const bf = Buffer.from(splitDataURI.pop() || '', 'base64')
+        const mime = splitDataURI[0].split(':')[1].split(';')[0]
+        const sanitizedFilename = _sanitizeFilename(filename)
+        const normalizedChatflowid = chatflowid.replace(/\\/g, '/')
+        const normalizedFilename = sanitizedFilename.replace(/\\/g, '/')
+        const filePath = `${normalizedChatflowid}/${normalizedFilename}`
+        const file = bucket.file(filePath)
+        await new Promise<void>((resolve, reject) => {
+            file.createWriteStream({ contentType: mime, metadata: { contentEncoding: 'base64' } })
+                .on('error', (err) => reject(err))
+                .on('finish', () => resolve())
+                .end(bf)
+        })
+        fileNames.push(sanitizedFilename)
 
-            return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: bf.length / 1024 / 1024 }
-        } catch (error) {
-            logStorageFailure(
-                `GCS save failed bucket=${gcsBucketName()} path=${objectPath} mime=${mime} bytes=${bytes} orgId=${orgId} chatflowId=${chatflowid}`,
-                error
-            )
-            throw error
-        }
+        return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: bf.length / 1024 / 1024 }
     } else {
         const dir = path.join(getStoragePath(), orgId, chatflowid)
         if (!fs.existsSync(dir)) {
@@ -202,15 +145,17 @@ export const addArrayFilesToStorage = async (
 
         return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: bf.length / 1024 / 1024 }
     } else if (storageType === 'gcs') {
+        const { bucket } = getGcsClient()
         const normalizedPaths = paths.map((p) => p.replace(/\\/g, '/'))
         const normalizedFilename = sanitizedFilename.replace(/\\/g, '/')
         const filePath = [...normalizedPaths, normalizedFilename].join('/')
-        try {
-            await saveBufferToGcs(filePath, bf, { contentType: mime })
-        } catch (error) {
-            logStorageFailure(`GCS save failed bucket=${gcsBucketName()} path=${filePath} mime=${mime} bytes=${bf?.length ?? 0}`, error)
-            throw error
-        }
+        const file = bucket.file(filePath)
+        await new Promise<void>((resolve, reject) => {
+            file.createWriteStream()
+                .on('error', (err) => reject(err))
+                .on('finish', () => resolve())
+                .end(bf)
+        })
         fileNames.push(sanitizedFilename)
 
         return { path: 'FILE-STORAGE::' + JSON.stringify(fileNames), totalSize: bf.length / 1024 / 1024 }
@@ -255,15 +200,17 @@ export const addSingleFileToStorage = async (
 
         return { path: 'FILE-STORAGE::' + sanitizedFilename, totalSize: bf.length / 1024 / 1024 }
     } else if (storageType === 'gcs') {
+        const { bucket } = getGcsClient()
         const normalizedPaths = paths.map((p) => p.replace(/\\/g, '/'))
         const normalizedFilename = sanitizedFilename.replace(/\\/g, '/')
         const filePath = [...normalizedPaths, normalizedFilename].join('/')
-        try {
-            await saveBufferToGcs(filePath, bf, { contentType: mime, metadata: { contentEncoding: 'base64' } })
-        } catch (error) {
-            logStorageFailure(`GCS save failed bucket=${gcsBucketName()} path=${filePath} mime=${mime} bytes=${bf?.length ?? 0}`, error)
-            throw error
-        }
+        const file = bucket.file(filePath)
+        await new Promise<void>((resolve, reject) => {
+            file.createWriteStream({ contentType: mime, metadata: { contentEncoding: 'base64' } })
+                .on('error', (err) => reject(err))
+                .on('finish', () => resolve())
+                .end(bf)
+        })
 
         return { path: 'FILE-STORAGE::' + sanitizedFilename, totalSize: bf.length / 1024 / 1024 }
     } else {
@@ -429,7 +376,13 @@ export const getFileFromStorage = async (file: string, ...paths: string[]): Prom
                     const [buffer] = await fallbackFile.download()
 
                     // Move to correct location with orgId
-                    await saveBufferToGcs(filePath, buffer)
+                    const file = bucket.file(filePath)
+                    await new Promise<void>((resolve, reject) => {
+                        file.createWriteStream()
+                            .on('error', (err) => reject(err))
+                            .on('finish', () => resolve())
+                            .end(buffer)
+                    })
 
                     // Delete the old file
                     await fallbackFile.delete()
@@ -878,7 +831,13 @@ export const streamStorageFile = async (
 
                 // If found, copy to correct location with orgId
                 if (buffer) {
-                    await saveBufferToGcs(filePath, buffer)
+                    const file = bucket.file(filePath)
+                    await new Promise<void>((resolve, reject) => {
+                        file.createWriteStream()
+                            .on('error', (err) => reject(err))
+                            .on('finish', () => resolve())
+                            .end(buffer)
+                    })
 
                     // Delete the old file
                     await fallbackFile.delete()

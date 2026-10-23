@@ -33,7 +33,6 @@ import {
     filterConversationHistory,
     restructureMessages
 } from '../commonUtils'
-import { logLLMError } from '../../../src/error'
 
 interface IConditionGridItem {
     variable: string
@@ -523,17 +522,7 @@ const runCondition = async (
     // @ts-ignore
     state.messages = restructureMessages(model, state)
 
-    let result
-    try {
-        result = await chain.invoke({ ...state, signal: abortControllerSignal?.signal }, config)
-    } catch (error) {
-        logLLMError(
-            options?.logger,
-            `Sequential condition agent id=${nodeData?.id ?? ''} name=${conditionName} chatId=${options?.chatId ?? ''}`,
-            error
-        )
-        throw error
-    }
+    let result = await chain.invoke({ ...state, signal: abortControllerSignal?.signal }, config)
     result.additional_kwargs = { ...result.additional_kwargs, nodeId: nodeData.id }
 
     if (conditionAgentStructuredOutput && conditionAgentStructuredOutput !== '[]' && result.tool_calls && result.tool_calls.length) {

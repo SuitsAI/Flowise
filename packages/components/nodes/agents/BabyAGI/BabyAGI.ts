@@ -3,7 +3,6 @@ import { VectorStore } from '@langchain/core/vectorstores'
 import { INode, INodeData, INodeParams } from '../../../src/Interface'
 import { BabyAGI } from './core'
 import { checkInputs, Moderation } from '../../moderation/Moderation'
-import { logLLMError } from '../../../src/error'
 import { formatResponse } from '../../outputparsers/OutputParserHelpers'
 
 class BabyAGI_Agents implements INode {
@@ -85,13 +84,8 @@ class BabyAGI_Agents implements INode {
 
         const objective = input
 
-        try {
-            const res = await executor.call({ objective })
-            return res
-        } catch (error) {
-            logLLMError(undefined, 'BabyAGI', error)
-            throw error
-        }
+        const res = await executor.call({ objective })
+        return res
     }
 }
 

@@ -8,7 +8,6 @@ import { AutoGPT } from 'langchain/experimental/autogpt'
 import { LLMChain } from 'langchain/chains'
 import { INode, INodeData, INodeParams } from '../../../src/Interface'
 import { checkInputs, Moderation } from '../../moderation/Moderation'
-import { logLLMError } from '../../../src/error'
 import { formatResponse } from '../../outputparsers/OutputParserHelpers'
 
 type ObjectTool = StructuredTool
@@ -209,8 +208,7 @@ class AutoGPT_Agents implements INode {
                     : ''
             }`
         } catch (e) {
-            logLLMError(undefined, 'AutoGPT', e)
-            throw e
+            throw new Error(e)
         }
     }
 }

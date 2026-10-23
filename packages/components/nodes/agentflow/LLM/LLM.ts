@@ -15,7 +15,6 @@ import {
 import { processTemplateVariables } from '../../../src/utils'
 import { extractLLMStreamDeltas, getAnswerTextFromMessageContent } from '../../../src/streamingReasoning'
 import { flatten } from 'lodash'
-import { getErrorMessage, isAbortError, logLLMError } from '../../../src/error'
 
 class LLM_Agentflow implements INode {
     label: string
@@ -592,21 +591,14 @@ class LLM_Agentflow implements INode {
                 ]
             }
         } catch (error) {
-            logLLMError(
-                options?.logger,
-                `LLM node id=${nodeData?.id ?? ''} label=${nodeData?.label ?? ''} model=${nodeData?.inputs?.llmModel ?? ''} chatId=${options?.chatId ?? ''}`,
-                error
-            )
             if (options.analyticHandlers && llmIds) {
-                await options.analyticHandlers.onLLMError(llmIds, getErrorMessage(error))
+                await options.analyticHandlers.onLLMError(llmIds, error instanceof Error ? error.message : String(error))
             }
 
-            if (isAbortError(error)) {
+            if (error instanceof Error && error.message === 'Aborted') {
                 throw error
             }
-            const wrapped = new Error(`Error in LLM node: ${getErrorMessage(error)}`)
-            ;(wrapped as Error & { cause?: unknown }).cause = error
-            throw wrapped
+            throw new Error(`Error in LLM node: ${error instanceof Error ? error.message : String(error)}`)
         }
     }
 
@@ -836,18 +828,23 @@ class LLM_Agentflow implements INode {
     ): Promise<AIMessageChunk> {
         let response = new AIMessageChunk('')
 
-        for await (const chunk of await llmNodeInstance.stream(messages, { signal: abortController?.signal })) {
-            if (sseStreamer) {
-                const { reasoningDelta, textDelta } = extractLLMStreamDeltas(chunk, '')
-                if (reasoningDelta) {
-                    sseStreamer.streamLLMReasoningEvent(chatId, reasoningDelta)
+        try {
+            for await (const chunk of await llmNodeInstance.stream(messages, { signal: abortController?.signal })) {
+                if (sseStreamer) {
+                    const { reasoningDelta, textDelta } = extractLLMStreamDeltas(chunk, '')
+                    if (reasoningDelta) {
+                        sseStreamer.streamLLMReasoningEvent(chatId, reasoningDelta)
+                    }
+                    if (textDelta) {
+                        sseStreamer.streamTokenEvent(chatId, textDelta)
+                    }
                 }
-                if (textDelta) {
-                    sseStreamer.streamTokenEvent(chatId, textDelta)
-                }
-            }
 
-            response = response.concat(chunk)
+                response = response.concat(chunk)
+            }
+        } catch (error) {
+            console.error('Error during streaming:', error)
+            throw error
         }
         if (Array.isArray(response.content) && response.content.length > 0) {
             response.content = getAnswerTextFromMessageContent(response.content)

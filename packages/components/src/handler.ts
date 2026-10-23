@@ -26,7 +26,6 @@ import { AgentAction } from '@langchain/core/agents'
 import { LunaryHandler } from '@langchain/community/callbacks/handlers/lunary'
 
 import { getCredentialData, getCredentialParam, getEnvironmentVariable } from './utils'
-import { logLLMError } from './error'
 import { DetachedLangfuseCallbackHandler } from './langfuseDetachedHandler'
 import { normalizeLangfuseToolCalls, toLangfuseTool } from './langfuseTools'
 import { EvaluationRunTracer } from '../evaluation/EvaluationRunTracer'
@@ -346,7 +345,12 @@ export class ConsoleCallbackHandler extends BaseTracer {
 
     onLLMError(run: Run) {
         const crumbs = this.getBreadcrumbs(run)
-        logLLMError(this.logger, `[${this.orgId}]: [llm/error] [${crumbs}] [${elapsed(run)}]`, run.error)
+        this.logger.verbose(
+            `[${this.orgId}]: [llm/error] [${crumbs}] [${elapsed(run)}] LLM run errored with error: ${tryJsonStringify(
+                run.error,
+                '[error]'
+            )}`
+        )
     }
 
     onToolStart(run: Run) {

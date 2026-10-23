@@ -9,7 +9,6 @@ import { INode, INodeData, INodeParams, IMultiAgentNode, ITeamState, ICommonObje
 import { ToolCallingAgentOutputParser, AgentExecutor } from '../../../src/agents'
 import { StringOutputParser } from '@langchain/core/output_parsers'
 import { getInputVariables, handleEscapeCharacters } from '../../../src/utils'
-import { isAbortError, logLLMError } from '../../../src/error'
 
 const examplePrompt = 'You are a research assistant who can search for up-to-date info using search engine.'
 
@@ -301,11 +300,7 @@ async function agentNode(
             ]
         }
     } catch (error) {
-        logLLMError(undefined, `Worker node id=${nodeId} name=${name}`, error)
-        if (isAbortError(error)) {
-            throw new Error('Aborted!')
-        }
-        throw error
+        throw new Error('Aborted!')
     }
 }
 

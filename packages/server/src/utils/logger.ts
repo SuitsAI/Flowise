@@ -7,34 +7,6 @@ import { NextFunction, Request, Response } from 'express'
 import DailyRotateFile from 'winston-daily-rotate-file'
 import { S3ClientConfig } from '@aws-sdk/client-s3'
 import { LoggingWinston } from '@google-cloud/logging-winston'
-import { formatErrorForLog } from '../errors/utils'
-
-const SPLAT = Symbol.for('splat')
-
-// Winston's printf only prints `message`. Errors passed as a second argument
-// (and undici "fetch failed" causes) would otherwise be dropped.
-const attachErrorDetails = format((info) => {
-    const splat = (info as Record<symbol, unknown>)[SPLAT]
-    const candidates: unknown[] = []
-    if (info.message instanceof Error) candidates.push(info.message)
-    if (Array.isArray(splat)) candidates.push(...splat)
-    if (info.cause) candidates.push(info.cause)
-
-    const attached = candidates.find((item) => item instanceof Error)
-    if (!attached) return info
-
-    const details = formatErrorForLog(attached)
-    if (info.message instanceof Error) {
-        info.message = details
-        return info
-    }
-
-    const message = typeof info.message === 'string' ? info.message : String(info.message ?? '')
-    if (!message.includes(details)) {
-        info.message = message ? `${message}\n${details}` : details
-    }
-    return info
-})
 
 const { S3StreamLogger } = require('s3-streamlogger')
 
@@ -134,14 +106,13 @@ if (!fs.existsSync(logDir)) {
 
 const logger = createLogger({
     format: combine(
-        errors({ stack: true }),
-        attachErrorDetails(),
         timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
         format.json(),
         printf(({ level, message, timestamp, stack }) => {
             const text = `${timestamp} [${level.toUpperCase()}]: ${message}`
-            return stack && !String(message).includes(String(stack)) ? text + '\n' + stack : text
-        })
+            return stack ? text + '\n' + stack : text
+        }),
+        errors({ stack: true })
     ),
     defaultMeta: {
         package: 'server'
