@@ -415,7 +415,9 @@ export async function start(): Promise<void> {
         logger.info(`⚡️ [server]: Flowise Server is listening at ${host ? 'http://' + host : ''}:${port}`)
     })
 
-    server.setTimeout(600000)
+    // 1 hour. Predictions write no bytes until the chatflow finishes, so a shorter
+    // socket timeout is what Render reports as a 502.
+    server.setTimeout(60 * 60 * 1000)
 }
 
 export function getInstance(): App | undefined {
