@@ -52,6 +52,7 @@ import {
 } from '../commonUtils'
 import { END, StateGraph } from '@langchain/langgraph'
 import { StructuredTool } from '@langchain/core/tools'
+import { getErrorMessage } from '../../../src/error'
 
 const defaultApprovalPrompt = `You are about to execute tool: {tools}. Ask if user want to proceed`
 const examplePrompt = 'You are a research assistant who can search for up-to-date info using search engine.'
@@ -1026,7 +1027,30 @@ class ToolNode<T extends BaseMessage[] | MessagesState> extends RunnableCallable
                     // @ts-ignore
                     tool.setFlowObject(ChannelsWithoutMessages)
                 }
-                let output = await tool.invoke(call.args, config)
+                let output
+                try {
+                    output = await tool.invoke(call.args, config)
+                } catch (e) {
+                    if (config?.signal?.aborted || (e instanceof Error && e.message === 'Aborted')) throw e
+                    console.error('Error invoking tool:', e)
+                    const errMsg = getErrorMessage(e)
+                    return new ToolMessage({
+                        name: tool.name,
+                        content: `Error: ${errMsg}`,
+                        tool_call_id: call.id!,
+                        additional_kwargs: {
+                            args: call.args,
+                            usedTools: [
+                                {
+                                    tool: tool.name ?? '',
+                                    toolInput: call.args,
+                                    toolOutput: '',
+                                    error: errMsg
+                                }
+                            ]
+                        }
+                    })
+                }
                 let sourceDocuments: Document[] = []
                 let artifacts = []
 

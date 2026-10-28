@@ -17,6 +17,7 @@ import { Document } from '@langchain/core/documents'
 import { DataSource } from 'typeorm'
 import { MessagesState, RunnableCallable, customGet } from '../commonUtils'
 import { getVars, prepareSandboxVars, executeJavaScriptCode, createCodeExecutionSandbox } from '../../../src/utils'
+import { getErrorMessage } from '../../../src/error'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 
 const defaultApprovalPrompt = `You are about to execute tool: {tools}. Ask if user want to proceed`
@@ -425,7 +426,30 @@ class ToolNode<T extends IStateWithMessages | BaseMessage[] | MessagesState> ext
                     // @ts-ignore
                     tool.setFlowObject(ChannelsWithoutMessages)
                 }
-                let output = await tool.invoke(call.args, config)
+                let output
+                try {
+                    output = await tool.invoke(call.args, config)
+                } catch (e) {
+                    if (config?.signal?.aborted || (e instanceof Error && e.message === 'Aborted')) throw e
+                    console.error('Error invoking tool:', e)
+                    const errMsg = getErrorMessage(e)
+                    return new ToolMessage({
+                        name: tool.name,
+                        content: `Error: ${errMsg}`,
+                        tool_call_id: call.id!,
+                        additional_kwargs: {
+                            args: call.args,
+                            usedTools: [
+                                {
+                                    tool: tool.name ?? '',
+                                    toolInput: call.args,
+                                    toolOutput: '',
+                                    error: errMsg
+                                }
+                            ]
+                        }
+                    })
+                }
                 let sourceDocuments: Document[] = []
                 let artifacts = []
                 if (output?.includes(SOURCE_DOCUMENTS_PREFIX)) {
