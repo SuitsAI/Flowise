@@ -132,7 +132,8 @@ class ReActAgentChat_Agents implements INode {
             agent,
             tools,
             verbose: process.env.DEBUG === 'true',
-            maxIterations: maxIterations ? parseFloat(maxIterations) : undefined
+            maxIterations: maxIterations ? parseFloat(maxIterations) : undefined,
+            handleParsingErrors: (e) => `Invalid tool input: ${e.message}. Please fix the arguments and try again.`
         })
 
         const callbacks = await additionalCallbacks(nodeData, options)

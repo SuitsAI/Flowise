@@ -280,7 +280,8 @@ const prepareAgent = async (
         input: flowObj?.input,
         isXML: true,
         verbose: process.env.DEBUG === 'true' ? true : false,
-        maxIterations: maxIterations ? parseFloat(maxIterations) : undefined
+        maxIterations: maxIterations ? parseFloat(maxIterations) : undefined,
+        handleParsingErrors: (e) => `Invalid tool input: ${e.message}. Please fix the arguments and try again.`
     })
 
     return executor

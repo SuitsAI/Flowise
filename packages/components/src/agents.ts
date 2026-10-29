@@ -24,7 +24,7 @@ import {
 } from 'langchain/agents'
 import { formatLogToString } from 'langchain/agents/format_scratchpad/log'
 import { IUsedTool } from './Interface'
-import { getErrorMessage } from './error'
+import { getErrorMessage, isAbortError } from './error'
 
 export const SOURCE_DOCUMENTS_PREFIX = '\n\n----FLOWISE_SOURCE_DOCUMENTS----\n\n'
 export const ARTIFACTS_PREFIX = '\n\n----FLOWISE_ARTIFACTS----\n\n'
@@ -517,15 +517,23 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
                             observation = `${action.tool} is not a valid tool, try another one.`
                         }
                     } catch (e) {
+                        // Only let genuine cancellations (user stop / parent abort) propagate and
+                        // terminate the run. Every other tool failure - whether a schema/parsing
+                        // error or a runtime error from the tool itself - should be surfaced back
+                        // to the LLM as an observation so the other tool calls in this batch (and
+                        // the rest of the agent run) are not aborted because of a single failure.
+                        if (isAbortError(e, config?.signal)) {
+                            throw e
+                        }
                         if (e instanceof ToolInputParsingException) {
-                            if (this.handleParsingErrors === true) {
-                                observation = 'Invalid or incomplete tool input. Please try again.'
-                            } else if (typeof this.handleParsingErrors === 'string') {
+                            if (typeof this.handleParsingErrors === 'string') {
                                 observation = this.handleParsingErrors
                             } else if (typeof this.handleParsingErrors === 'function') {
                                 observation = this.handleParsingErrors(e)
                             } else {
-                                throw e
+                                // Defaults to a generic message (this.handleParsingErrors === true / false),
+                                // either way the parsing failure is fed back to the LLM, never thrown.
+                                observation = 'Invalid or incomplete tool input. Please try again.'
                             }
                             observation = await new ExceptionTool().call(observation, runManager?.getChild())
                             usedTools.push({
@@ -688,17 +696,23 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
                         observation = observationArray[0]
                     }
                 } catch (e) {
+                    // Same rationale as in _call(): only real cancellations should abort the run.
+                    // Any other tool failure (parsing error or runtime error) is turned into an
+                    // observation so the agent can keep going instead of the whole run crashing.
+                    if (isAbortError(e, config?.signal)) {
+                        throw e
+                    }
                     if (e instanceof ToolInputParsingException) {
-                        if (this.handleParsingErrors === true) {
-                            observation = 'Invalid or incomplete tool input. Please try again.'
-                        } else if (typeof this.handleParsingErrors === 'string') {
+                        if (typeof this.handleParsingErrors === 'string') {
                             observation = this.handleParsingErrors
                         } else if (typeof this.handleParsingErrors === 'function') {
                             observation = this.handleParsingErrors(e)
                         } else {
-                            throw e
+                            observation = 'Invalid or incomplete tool input. Please try again.'
                         }
                         observation = await new ExceptionTool().call(observation, runManager?.getChild())
+                    } else {
+                        observation = `Error: ${getErrorMessage(e)}`
                     }
                 }
             } else {
