@@ -1891,10 +1891,20 @@ class Agent_Agentflow implements INode {
                         tool: selectedTool.name,
                         toolInput,
                         toolOutput: '',
-                        error: getErrorMessage(e)
+                        error: errMsg
                     })
                     sseStreamer?.streamUsedToolsEvent(chatId, flatten(usedTools))
-                    throw new Error(getErrorMessage(e))
+
+                    // Feed the failure back to the LLM as a tool observation instead of aborting
+                    // the whole agent run. This lets the model recover (retry with corrected
+                    // input, pick a different tool, or explain the failure) rather than a single
+                    // failing tool crashing the entire chatflow/agentflow execution.
+                    messages.push({
+                        role: 'tool',
+                        content: `Error: ${errMsg}`,
+                        tool_call_id: toolCall.id,
+                        name: toolCall.name
+                    })
                 }
             }
         }
@@ -1902,7 +1912,7 @@ class Agent_Agentflow implements INode {
         // Return direct tool output if there's exactly one tool with returnDirect
         if (response.tool_calls.length === 1) {
             const selectedTool = toolsInstance.find((tool) => tool.name === response.tool_calls?.[0]?.name)
-            if (selectedTool && selectedTool.returnDirect) {
+            if (selectedTool && selectedTool.returnDirect && !usedTools[0]?.error) {
                 const lastToolOutput = usedTools[0]?.toolOutput || ''
                 const lastToolOutputString = typeof lastToolOutput === 'string' ? lastToolOutput : JSON.stringify(lastToolOutput, null, 2)
 
@@ -2207,10 +2217,20 @@ class Agent_Agentflow implements INode {
                             tool: selectedTool.name,
                             toolInput,
                             toolOutput: '',
-                            error: getErrorMessage(e)
+                            error: errMsg
                         })
                         sseStreamer?.streamUsedToolsEvent(chatId, flatten(usedTools))
-                        throw new Error(getErrorMessage(e))
+
+                        // Feed the failure back to the LLM as a tool observation instead of
+                        // aborting the whole agent run. This lets the model recover (retry with
+                        // corrected input, pick a different tool, or explain the failure) rather
+                        // than a single failing tool crashing the entire chatflow/agentflow run.
+                        messages.push({
+                            role: 'tool',
+                            content: `Error: ${errMsg}`,
+                            tool_call_id: toolCall.id,
+                            name: toolCall.name
+                        })
                     }
                 }
             }
@@ -2219,7 +2239,7 @@ class Agent_Agentflow implements INode {
         // Return direct tool output if there's exactly one tool with returnDirect
         if (response.tool_calls.length === 1) {
             const selectedTool = toolsInstance.find((tool) => tool.name === response.tool_calls?.[0]?.name)
-            if (selectedTool && selectedTool.returnDirect) {
+            if (selectedTool && selectedTool.returnDirect && !usedTools[0]?.error) {
                 const lastToolOutput = usedTools[0]?.toolOutput || ''
                 const lastToolOutputString = typeof lastToolOutput === 'string' ? lastToolOutput : JSON.stringify(lastToolOutput, null, 2)
 

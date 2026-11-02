@@ -301,7 +301,8 @@ const prepareAgent = async (
         chatId: flowObj?.chatId,
         input: flowObj?.input,
         verbose: process.env.DEBUG === 'true',
-        maxIterations: maxIterations ? parseFloat(maxIterations) : undefined
+        maxIterations: maxIterations ? parseFloat(maxIterations) : undefined,
+        handleParsingErrors: (e) => `Invalid tool input: ${e.message}. Please fix the arguments and try again.`
     })
 
     return executor
