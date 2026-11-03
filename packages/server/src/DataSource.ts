@@ -27,7 +27,9 @@ export const init = async (): Promise<void> => {
                 synchronize: false,
                 migrationsRun: false,
                 entities: Object.values(entities),
-                migrations: sqliteMigrations
+                migrations: sqliteMigrations,
+                enableWAL: true,
+                busyTimeout: 5000
             })
             break
         case 'mysql':
@@ -95,7 +97,9 @@ export const init = async (): Promise<void> => {
                 synchronize: false,
                 migrationsRun: false,
                 entities: Object.values(entities),
-                migrations: sqliteMigrations
+                migrations: sqliteMigrations,
+                enableWAL: true,
+                busyTimeout: 5000
             })
             break
     }

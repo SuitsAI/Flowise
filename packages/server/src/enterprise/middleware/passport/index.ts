@@ -10,7 +10,7 @@ import { InternalFlowiseError } from '../../../errors/internalFlowiseError'
 import { IdentityManager } from '../../../IdentityManager'
 import { Platform } from '../../../Interface'
 import { getRunningExpressApp } from '../../../utils/getRunningExpressApp'
-import { OrganizationUserStatus } from '../../database/entities/organization-user.entity'
+import { OrganizationUser, OrganizationUserStatus } from '../../database/entities/organization-user.entity'
 import { GeneralRole } from '../../database/entities/role.entity'
 import { WorkspaceUser, WorkspaceUserStatus } from '../../database/entities/workspace-user.entity'
 import { ErrorMessage, IAssignedWorkspace, LoggedInUser } from '../../Interface.Enterprise'
@@ -126,9 +126,6 @@ export const initializeJwtCookieMiddleware = async (app: express.Application, id
                             ? response.workspaceDetails[0]
                             : (response.workspaceDetails as WorkspaceUser)
                     const workspaceUserService = new WorkspaceUserService()
-                    workspaceUser.status = WorkspaceUserStatus.ACTIVE
-                    workspaceUser.lastLogin = new Date().toISOString()
-                    workspaceUser.updatedBy = workspaceUser.userId
                     const organizationUserService = new OrganizationUserService()
                     const { organizationUser } = await organizationUserService.readOrganizationUserByWorkspaceIdUserId(
                         workspaceUser.workspaceId,
@@ -137,9 +134,31 @@ export const initializeJwtCookieMiddleware = async (app: express.Application, id
                     )
                     if (!organizationUser)
                         throw new InternalFlowiseError(StatusCodes.NOT_FOUND, OrganizationUserErrorMessage.ORGANIZATION_USER_NOT_FOUND)
-                    organizationUser.status = OrganizationUserStatus.ACTIVE
-                    await workspaceUserService.updateWorkspaceUser(workspaceUser, queryRunner)
-                    await organizationUserService.updateOrganizationUser(organizationUser)
+                    const signedInAt = new Date()
+                    await queryRunner.manager
+                        .createQueryBuilder()
+                        .update(WorkspaceUser)
+                        .set({
+                            status: WorkspaceUserStatus.ACTIVE,
+                            lastLogin: signedInAt.toISOString(),
+                            updatedBy: workspaceUser.userId,
+                            updatedDate: signedInAt
+                        })
+                        .where('workspaceId = :workspaceId', { workspaceId: workspaceUser.workspaceId })
+                        .andWhere('userId = :userId', { userId: workspaceUser.userId })
+                        .useTransaction(false)
+                        .execute()
+                    await queryRunner.manager
+                        .createQueryBuilder()
+                        .update(OrganizationUser)
+                        .set({
+                            status: OrganizationUserStatus.ACTIVE,
+                            updatedDate: signedInAt
+                        })
+                        .where('organizationId = :organizationId', { organizationId: organizationUser.organizationId })
+                        .andWhere('userId = :userId', { userId: organizationUser.userId })
+                        .useTransaction(false)
+                        .execute()
 
                     const workspaceUsers = await workspaceUserService.readWorkspaceUserByUserId(organizationUser.userId, queryRunner)
                     const assignedWorkspaces: IAssignedWorkspace[] = workspaceUsers.map((workspaceUser) => {
