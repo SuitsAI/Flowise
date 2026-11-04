@@ -12,6 +12,19 @@ const MCP_IDLE_CLOSE_MS = 120_000
 // and every other request waiting on this toolkit waits with it.
 const MCP_TRANSPORT_PROBE_TIMEOUT_MS = 8_000
 
+// Some MCP servers (e.g. Airtable's remote MCP) populate `structuredContent` and leave
+// `content` empty for tools that return structured data. Falling back keeps those tools
+// from looking like they returned nothing.
+function formatToolResult(res: { content?: unknown[]; structuredContent?: unknown }): string {
+    if (Array.isArray(res.content) && res.content.length > 0) {
+        return JSON.stringify(res.content)
+    }
+    if (res.structuredContent !== undefined) {
+        return JSON.stringify(res.structuredContent)
+    }
+    return JSON.stringify(res.content ?? [])
+}
+
 export class MCPToolkit extends BaseToolkit {
     tools: Tool[] = []
     _tools: ListToolsResult | null = null
@@ -273,7 +286,7 @@ export class MCPToolkit extends BaseToolkit {
             const client = await this.createClient()
             try {
                 const res = await client.request(req, CallToolResultSchema, requestOptions)
-                return JSON.stringify(res.content)
+                return formatToolResult(res)
             } finally {
                 await client.close().catch(() => undefined)
             }
@@ -284,7 +297,7 @@ export class MCPToolkit extends BaseToolkit {
         return this.enqueue(async () => {
             try {
                 const res = await this.withClient((client) => client.request(req, CallToolResultSchema, requestOptions))
-                return JSON.stringify(res.content)
+                return formatToolResult(res)
             } catch (error) {
                 if (this.isConnectionError(error)) {
                     await this.forceClose()
@@ -377,7 +390,9 @@ export async function MCPTool({
 }): Promise<Tool> {
     return tool(
         async (input): Promise<string> => {
-            return toolkit.callTool(name, (input ?? {}) as Record<string, unknown>)
+            const response = await toolkit.callTool(name, (input ?? {}) as Record<string, unknown>)
+            console.log('Custom MCP tool execution response:', { name, response })
+            return response
         },
         {
             name: name,
