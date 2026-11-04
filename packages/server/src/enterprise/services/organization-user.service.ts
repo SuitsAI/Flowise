@@ -302,7 +302,13 @@ export class OrganizationUserService {
             updateOrganizationUser = await this.saveOrganizationUser(updateOrganizationUser, queryRunner)
             await queryRunner.commitTransaction()
         } catch (error) {
-            await queryRunner.rollbackTransaction()
+            if (queryRunner.isTransactionActive) {
+                try {
+                    await queryRunner.rollbackTransaction()
+                } catch {
+                    // BEGIN can fail before SQLite has a transaction. Keep the original error.
+                }
+            }
             throw error
         } finally {
             await queryRunner.release()

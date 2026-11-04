@@ -94,7 +94,8 @@ export const initializeDBClientAndStore: any = () => {
             dbStore = new sqlSession({
                 db: 'database.sqlite',
                 table: 'login_sessions',
-                dir: homePath
+                dir: homePath,
+                concurrentDb: true
             })
             return dbStore
         }
