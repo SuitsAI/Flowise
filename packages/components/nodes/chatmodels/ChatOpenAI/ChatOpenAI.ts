@@ -3,6 +3,7 @@ import { BaseCache } from '@langchain/core/caches'
 import { ICommonObject, IMultiModalOption, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
 import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
 import { ChatOpenAI } from './FlowiseChatOpenAI'
+import { buildImageGenerationTool } from './openaiImageGeneration'
 import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
 import { openAIReasoningParamsApplyToModel } from './flowiseOpenAIReasoning'
 import { HttpsProxyAgent } from 'https-proxy-agent'
@@ -23,7 +24,7 @@ class ChatOpenAI_ChatModels implements INode {
     constructor() {
         this.label = 'ChatOpenAI'
         this.name = 'chatOpenAI'
-        this.version = 8.5
+        this.version = 8.6
         this.type = 'ChatOpenAI'
         this.icon = 'openai.svg'
         this.category = 'Chat Models'
@@ -179,6 +180,122 @@ class ChatOpenAI_ChatModels implements INode {
                 }
             },
             {
+                label: 'Allow Image Generation',
+                name: 'allowImageGeneration',
+                type: 'boolean',
+                description:
+                    'Generate images with the OpenAI Responses API image tool. The chat model stays a mainline model (gpt-4o, gpt-4.1, gpt-5, and newer) and calls gpt-image. Images are returned as chat artifacts, the same way Gemini image models do. See the <a href="https://developers.openai.com/api/docs/guides/image-generation" target="_blank">image generation guide</a>.',
+                default: false,
+                optional: true
+            },
+            {
+                label: 'Image Model',
+                name: 'imageGenerationModel',
+                type: 'options',
+                description:
+                    'Model used inside the image generation tool. 2.6 Sunburst is for detailed visual work. 2.6 Flare is for fast iteration. 2.5 Sunburst is better for precise edits, and 2.5 Flare is faster for everyday generation.',
+                options: [
+                    { label: 'gpt-image-2.6-sunburst', name: 'gpt-image-2.6-sunburst' },
+                    { label: 'gpt-image-2.6-flare', name: 'gpt-image-2.6-flare' },
+                    { label: 'gpt-image-2.5-sunburst', name: 'gpt-image-2.5-sunburst' },
+                    { label: 'gpt-image-2.5-flare', name: 'gpt-image-2.5-flare' },
+                    { label: 'gpt-image-1.5', name: 'gpt-image-1.5' },
+                    { label: 'gpt-image-1', name: 'gpt-image-1' },
+                    { label: 'gpt-image-1-mini', name: 'gpt-image-1-mini' }
+                ],
+                default: 'gpt-image-2.6-sunburst',
+                optional: true,
+                additionalParams: true,
+                show: {
+                    allowImageGeneration: true
+                }
+            },
+            {
+                label: 'Image Size',
+                name: 'imageSize',
+                type: 'options',
+                description: 'Output size. Auto lets the image model choose. These are the sizes OpenAI recommends for GPT Image.',
+                options: [
+                    { label: 'Auto', name: 'auto' },
+                    { label: '1024x1024 (square)', name: '1024x1024' },
+                    { label: '1536x1024 (landscape)', name: '1536x1024' },
+                    { label: '1024x1536 (portrait)', name: '1024x1536' }
+                ],
+                default: 'auto',
+                optional: true,
+                additionalParams: true,
+                show: {
+                    allowImageGeneration: true
+                }
+            },
+            {
+                label: 'Image Quality',
+                name: 'imageQuality',
+                type: 'options',
+                description:
+                    'Rendering quality. xhigh and max apply to GPT Image 2.5 and 2.6 Sunburst and Flare. Earlier gpt-image models support up to high.',
+                options: [
+                    { label: 'Auto', name: 'auto' },
+                    { label: 'Low', name: 'low' },
+                    { label: 'Medium', name: 'medium' },
+                    { label: 'High', name: 'high' },
+                    { label: 'Xhigh', name: 'xhigh' },
+                    { label: 'Max', name: 'max' }
+                ],
+                default: 'auto',
+                optional: true,
+                additionalParams: true,
+                show: {
+                    allowImageGeneration: true
+                }
+            },
+            {
+                label: 'Image Format',
+                name: 'imageOutputFormat',
+                type: 'options',
+                description: 'png and jpeg render in chat. webp is returned as a file. Use png or webp for transparent backgrounds.',
+                options: [
+                    { label: 'PNG', name: 'png' },
+                    { label: 'JPEG', name: 'jpeg' },
+                    { label: 'WebP', name: 'webp' }
+                ],
+                default: 'png',
+                optional: true,
+                additionalParams: true,
+                show: {
+                    allowImageGeneration: true
+                }
+            },
+            {
+                label: 'Image Background',
+                name: 'imageBackground',
+                type: 'options',
+                description: 'Transparent backgrounds require png or webp output.',
+                options: [
+                    { label: 'Auto', name: 'auto' },
+                    { label: 'Opaque', name: 'opaque' },
+                    { label: 'Transparent', name: 'transparent' }
+                ],
+                default: 'auto',
+                optional: true,
+                additionalParams: true,
+                show: {
+                    allowImageGeneration: true
+                }
+            },
+            {
+                label: 'Image Compression',
+                name: 'imageOutputCompression',
+                type: 'number',
+                step: 1,
+                description: 'Compression from 0 to 100. Only sent for jpeg and webp.',
+                optional: true,
+                additionalParams: true,
+                show: {
+                    allowImageGeneration: true
+                }
+            },
+            {
                 label: 'Reasoning',
                 description:
                     'Turn on to stream model reasoning separately from answer tokens (SSE event name: llmReasoning). Only applicable to reasoning-capable models.',
@@ -303,6 +420,13 @@ class ChatOpenAI_ChatModels implements INode {
 
         const allowImageUploads = nodeData.inputs?.allowImageUploads as boolean
         const imageResolution = nodeData.inputs?.imageResolution as string
+        const allowImageGeneration = nodeData.inputs?.allowImageGeneration === true
+        const imageGenerationModel = nodeData.inputs?.imageGenerationModel as string
+        const imageSize = nodeData.inputs?.imageSize as string
+        const imageQuality = nodeData.inputs?.imageQuality as string
+        const imageOutputFormat = nodeData.inputs?.imageOutputFormat as string
+        const imageBackground = nodeData.inputs?.imageBackground as string
+        const imageOutputCompression = nodeData.inputs?.imageOutputCompression as string
 
         if (nodeData.inputs?.credentialId) {
             nodeData.credential = nodeData.inputs?.credentialId
@@ -317,7 +441,8 @@ class ChatOpenAI_ChatModels implements INode {
             modelName,
             openAIApiKey,
             apiKey: openAIApiKey,
-            streaming: streaming ?? true
+            streaming: streaming ?? true,
+            ...(allowImageGeneration ? { useResponsesApi: true } : {})
         }
 
         if (maxTokens) obj.maxTokens = parseInt(maxTokens, 10)
@@ -391,6 +516,27 @@ class ChatOpenAI_ChatModels implements INode {
 
         const model = new ChatOpenAI(nodeData.id, obj)
         model.setMultiModalOption(multiModalOption)
+        if (allowImageGeneration) {
+            const compression =
+                imageOutputCompression !== undefined && imageOutputCompression !== null && String(imageOutputCompression).trim() !== ''
+                    ? parseInt(String(imageOutputCompression), 10)
+                    : undefined
+            model.setImageGenerationTool(
+                buildImageGenerationTool({
+                    model: imageGenerationModel,
+                    size: imageSize,
+                    quality: imageQuality,
+                    outputFormat: imageOutputFormat,
+                    background: imageBackground,
+                    outputCompression: compression
+                })
+            )
+            model.setFlowContext({
+                chatflowid: options.chatflowid,
+                orgId: options.orgId,
+                chatId: options.chatId
+            })
+        }
         return model
     }
 }
